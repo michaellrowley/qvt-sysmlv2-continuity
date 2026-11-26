@@ -3,6 +3,8 @@ package org.github.michaellrowley.sysmlqvt.qvt;
 import org.github.michaellrowley.sysmlqvt.model.Artifact;
 import org.github.michaellrowley.sysmlqvt.model.ArtifactKind;
 import org.github.michaellrowley.sysmlqvt.model.SysMLModel;
+import org.github.michaellrowley.sysmlqvt.template.SysMLTemplateLibrary;
+import org.github.michaellrowley.sysmlqvt.text.SysMLParser;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -70,5 +72,41 @@ mapping StakeholderNeed::developIntent() : Requirement {
 
         assertTrue(result.successful(), result.diagnostics().toString());
         assertEquals("R-SYSTEM", model.latest("R-SYSTEM").id());
+    }
+
+    @Test
+    void executesFullBatteryOperationalScope() {
+        SysMLParser.ParseResult parsed =
+            new SysMLParser().parse(
+                "battery-template",
+                new SysMLTemplateLibrary().batteryLifecycle()
+            );
+
+        QvtResult result =
+            new EclipseQvtEngine().execute(
+                parsed.model(),
+                Path.of("qvt/LifecycleOperational.qvto")
+            );
+
+        assertTrue(result.successful(), result.diagnostics().toString());
+        assertTrue(parsed.model().latestArtifacts().stream()
+            .anyMatch(artifact ->
+                artifact.kind() == ArtifactKind.ARCHITECTURAL_ELEMENT));
+        assertTrue(parsed.model().latestArtifacts().stream()
+            .anyMatch(artifact ->
+                artifact.kind() == ArtifactKind.INTERFACE));
+        assertTrue(parsed.model().latestArtifacts().stream()
+            .anyMatch(artifact ->
+                artifact.kind() == ArtifactKind.BEHAVIOR_ELEMENT));
+        assertTrue(parsed.model().latestArtifacts().stream()
+            .anyMatch(artifact ->
+                artifact.kind() == ArtifactKind.ALLOCATION));
+        assertTrue(parsed.model().latestArtifacts().stream()
+            .anyMatch(artifact ->
+                artifact.kind() == ArtifactKind.DEPLOYMENT));
+        assertTrue(parsed.model().latestArtifacts().stream()
+            .anyMatch(artifact ->
+                artifact.kind() == ArtifactKind.IMPLEMENTATION));
+        assertTrue(parsed.model().activeTraces().size() >= 20);
     }
 }

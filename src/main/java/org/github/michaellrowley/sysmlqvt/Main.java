@@ -37,6 +37,7 @@ public final class Main {
             case "template" -> runTemplate(args);
             case "validate" -> runValidate(args);
             case "qvt" -> runQvt(args);
+            case "relations" -> runRelations(args);
             case "help", "--help", "-h" -> printUsage();
             default -> {
                 System.err.println("Unknown command: " + args[0]);
@@ -93,6 +94,58 @@ public final class Main {
                 );
             }
         }
+
+    }
+
+    private static void runRelations(String[] args) throws IOException {
+            String input = option(args, "--input");
+            String mode = option(args, "--mode");
+            String output = option(args, "--output");
+            if (input == null) {
+                throw new IllegalArgumentException("--input is required");
+            }
+            String resolvedMode = mode == null ? "enforce" : mode.toLowerCase();
+            if (!List.of("checkonly", "enforce").contains(resolvedMode)) {
+                throw new IllegalArgumentException(
+                    "--mode must be checkonly or enforce"
+                );
+            }
+
+            SysMLModel model = readModel(Path.of(input));
+            ContinuityRelations relations = new ContinuityRelations();
+            if ("checkonly".equals(resolvedMode)) {
+                List<ContinuityRelations.RelationDiagnostic> diagnostics =
+                    relations.checkonly(model);
+                if (diagnostics.isEmpty()) {
+                    System.out.println("No continuity relation diagnostics.");
+                } else {
+                    for (ContinuityRelations.RelationDiagnostic diagnostic
+                         : diagnostics) {
+                        System.err.println(
+                            diagnostic.relation() + ": " +
+                                diagnostic.message()
+                        );
+                    }
+                    System.exit(1);
+                }
+                return;
+            }
+
+            List<?> traces = relations.enforce(model);
+            if (output != null) {
+                Path outputPath = Path.of(output);
+                Files.createDirectories(outputPath.toAbsolutePath().getParent());
+                Files.writeString(
+                    outputPath,
+                    new SysMLPrinter().print(model),
+                    StandardCharsets.UTF_8
+                );
+                System.out.println("Wrote " + outputPath.toAbsolutePath());
+            }
+            System.out.println(
+                "Continuity relations enforced: " +
+                    traces.size() + " trace links materialized"
+            );
     }
 
     private static void runQvt(String[] args) throws IOException {
@@ -225,7 +278,11 @@ public final class Main {
                 "  java -jar sysml-v2-qvt-continuity.jar template battery --output battery.sysml\n" +
                 "  java -jar sysml-v2-qvt-continuity.jar validate --input battery.sysml\n" +
                 "  java -jar sysml-v2-qvt-continuity.jar qvt --input battery.sysml " +
-                "--output lifecycle.sysml --transformation qvt/LifecycleOperational.qvto"
+                "--output lifecycle.sysml --transformation qvt/LifecycleOperational.qvto\n" +
+                "  java -jar sysml-v2-qvt-continuity.jar relations --input battery.sysml " +
+                "--mode checkonly\n" +
+                "  java -jar sysml-v2-qvt-continuity.jar relations --input battery.sysml " +
+                "--mode enforce --output relations.sysml"
         );
     }
 }

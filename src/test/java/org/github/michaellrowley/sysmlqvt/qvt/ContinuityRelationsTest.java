@@ -71,4 +71,26 @@ class ContinuityRelationsTest {
                     && trace.target().equals(evidence.ref()))
         );
     }
+
+    @Test
+    void checkonlyReportsMissingRelations() {
+        SysMLModel model = new SysMLModel();
+        model.addArtifact(new Artifact(
+            "N-INCOMPLETE",
+            ArtifactKind.STAKEHOLDER_NEED,
+            1,
+            Map.of("requirementId", "R-INCOMPLETE"),
+            java.util.List.of()
+        ));
+
+        java.util.List<ContinuityRelations.RelationDiagnostic> diagnostics =
+            new ContinuityRelations().checkonly(model);
+
+        assertTrue(
+            diagnostics.stream()
+                .anyMatch(diagnostic ->
+                    diagnostic.relation()
+                        .equals("StakeholderNeedToRequirement"))
+        );
+    }
 }

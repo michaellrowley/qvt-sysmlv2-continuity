@@ -35,6 +35,81 @@ behavior B-BATT-THERMAL-CONTROL {
   heatBelowC = 24.0;
   offAboveC = 26.0;
   safeOffOnSensorFault = true;
+  functionCalls = ["CALL-GENERATE-HEATER-COMMAND"];
+  communications = ["COMM-TEMPERATURE-SENSOR", "COMM-HEATER-COMMAND"];
+  schedules = ["SCH-THERMAL-CONTROL"];
+}
+
+interface IF-BATT-THERMAL-CONTROL {
+  revision = 1;
+  name = "BatteryThermalInterface";
+  requirement = "R-BATT-THERMAL@1";
+  architecture = "ThermalController@1";
+  protocol = "CAN";
+}
+
+port P-TEMPERATURE-IN {
+  revision = 1;
+  name = "temperature_in";
+  interface = "IF-BATT-THERMAL-CONTROL@1";
+  direction = "in";
+  protocol = "CAN";
+}
+
+port P-HEATER-OUT {
+  revision = 1;
+  name = "heater_out";
+  interface = "IF-BATT-THERMAL-CONTROL@1";
+  direction = "out";
+  protocol = "CAN";
+}
+
+connection CONN-BATT-THERMAL {
+  revision = 1;
+  source = "P-TEMPERATURE-IN@1";
+  target = "P-HEATER-OUT@1";
+  transport = "CAN";
+}
+
+function call CALL-GENERATE-HEATER-COMMAND {
+  revision = 1;
+  behavior = "B-BATT-THERMAL-CONTROL@1";
+  functionName = "generate_heater_command";
+  target = "ThermalController";
+  synchronous = true;
+  timeoutMs = 10;
+  returnBinding = "heaterCommand";
+}
+
+communication COMM-TEMPERATURE-SENSOR {
+  revision = 1;
+  behavior = "B-BATT-THERMAL-CONTROL@1";
+  kind = "subscription";
+  direction = "in";
+  channel = "battery.temperature";
+  protocol = "CAN";
+  payloadType = "TemperatureReading";
+}
+
+communication COMM-HEATER-COMMAND {
+  revision = 1;
+  behavior = "B-BATT-THERMAL-CONTROL@1";
+  kind = "command";
+  direction = "out";
+  channel = "heater.command";
+  protocol = "CAN";
+  payloadType = "HeaterCommand";
+}
+
+schedule SCH-THERMAL-CONTROL {
+  revision = 1;
+  behavior = "B-BATT-THERMAL-CONTROL@1";
+  kind = "cyclic";
+  periodMs = 100;
+  deadlineMs = 100;
+  wcetMs = 5;
+  priority = 50;
+  entryPoint = "generate_heater_command";
 }
 
 implementation C-BATT-THERMAL-CONTROL {
@@ -45,13 +120,13 @@ implementation C-BATT-THERMAL-CONTROL {
   targetPlatform = "embedded";
 }
 
-allocation B-BATT-THERMAL-CONTROL {
+allocation AL-BATT-THERMAL-CONTROL {
   revision = 1;
   sourceRef = "B-BATT-THERMAL-CONTROL@1";
   targetRef = "ThermalController@1";
 }
 
-deployment B-BATT-THERMAL-CONTROL {
+deployment DP-BATT-THERMAL-CONTROL {
   revision = 1;
   componentRef = "B-BATT-THERMAL-CONTROL@1";
   targetRef = "ThermalController@1";
@@ -77,6 +152,36 @@ test component TC-C-LOW {
   behavior = "B-BATT-THERMAL-CONTROL@1";
 }
 
+test component TC-C-HIGH {
+  revision = 1;
+  purpose = "High temperature turns the heater off.";
+  temperatureC = 32.0;
+  sensorValid = true;
+  expected = "OFF";
+  requirement = "R-BATT-THERMAL@1";
+  behavior = "B-BATT-THERMAL-CONTROL@1";
+}
+
+test component TC-C-DEADBAND {
+  revision = 1;
+  purpose = "Deadband preserves the prior state.";
+  temperatureC = 25.0;
+  sensorValid = true;
+  expected = "HOLD";
+  requirement = "R-BATT-THERMAL@1";
+  behavior = "B-BATT-THERMAL-CONTROL@1";
+}
+
+test component TC-C-SENSOR-FAULT {
+  revision = 1;
+  purpose = "Sensor fault forces safe-off.";
+  temperatureC = 25.0;
+  sensorValid = false;
+  expected = "SAFE_OFF";
+  requirement = "R-BATT-THERMAL@1";
+  behavior = "B-BATT-THERMAL-CONTROL@1";
+}
+
 test scenario TC-S-COLD-START {
   revision = 1;
   purpose = "Cold battery recovers into the normal temperature band.";
@@ -87,12 +192,36 @@ test scenario TC-S-COLD-START {
   behavior = "B-BATT-THERMAL-CONTROL@1";
 }
 
+test scenario TC-S-HOT-AMBIENT {
+  revision = 1;
+  purpose = "Hot ambient conditions cool below the upper limit.";
+  initialTemperatureC = 32.0;
+  ambientTemperatureC = 28.0;
+  steps = 50;
+  requirement = "R-BATT-THERMAL@1";
+  behavior = "B-BATT-THERMAL-CONTROL@1";
+}
+
+test scenario TC-S-SENSOR-LOSS {
+  revision = 1;
+  purpose = "Sensor loss forces safe-off.";
+  initialTemperatureC = 25.0;
+  ambientTemperatureC = 25.0;
+  steps = 50;
+  faultStep = 10;
+  requireSafeOff = true;
+  requirement = "R-BATT-THERMAL@1";
+  behavior = "B-BATT-THERMAL-CONTROL@1";
+}
+
 evidence E-BATT-THERMAL {
   revision = 1;
   result = "pass";
   summary = "Battery thermal lifecycle verification passed.";
   requirement = "R-BATT-THERMAL@1";
   behavior = "B-BATT-THERMAL-CONTROL@1";
+  implementation = "C-BATT-THERMAL-CONTROL@1";
+  verificationPlan = "VP-BATT-THERMAL@1";
 }
 """;
     }

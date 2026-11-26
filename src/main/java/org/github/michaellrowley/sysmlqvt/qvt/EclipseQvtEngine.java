@@ -11,8 +11,6 @@ import org.eclipse.m2m.qvt.oml.ExecutionContextImpl;
 import org.eclipse.m2m.qvt.oml.ExecutionDiagnostic;
 import org.eclipse.m2m.qvt.oml.ModelExtent;
 import org.eclipse.m2m.qvt.oml.TransformationExecutor;
-import org.github.michaellrowley.sysmlqvt.model.Artifact;
-import org.github.michaellrowley.sysmlqvt.model.ArtifactKind;
 import org.github.michaellrowley.sysmlqvt.model.SysMLModel;
 
 import java.nio.file.Path;
@@ -80,7 +78,7 @@ public final class EclipseQvtEngine implements QvtEngine {
                 }
             } else {
                 bridge.mergeFrom(model, sysmlExtent.getContents());
-                materializeIntentMappings(model);
+                new LifecycleEngine(model).synchronizeOperationalScope();
             }
 
             return new QvtResult(model, successful, diagnostics);
@@ -93,55 +91,4 @@ public final class EclipseQvtEngine implements QvtEngine {
         }
     }
 
-    private void materializeIntentMappings(SysMLModel model) {
-        for (Artifact need : model.latestArtifacts()) {
-            if (need.kind() != ArtifactKind.STAKEHOLDER_NEED) {
-                continue;
-            }
-            Object configuredId = need.properties().get("requirementId");
-            String requirementId = configuredId == null
-                ? need.id()
-                : String.valueOf(configuredId);
-
-            java.util.LinkedHashMap<String, Object> properties =
-                new java.util.LinkedHashMap<>();
-            properties.put("statement", need.properties().getOrDefault("statement", ""));
-            properties.put("rationale", need.properties().getOrDefault("rationale", ""));
-            properties.put(
-                "acceptanceCriteria",
-                need.properties().getOrDefault("acceptanceCriteria", java.util.List.of())
-            );
-            properties.put("sourceNeed", need.ref());
-
-            Artifact existing = null;
-            try {
-                existing = model.latest(requirementId);
-            } catch (IllegalArgumentException ignored) {
-            }
-
-            if (existing != null && existing.properties().equals(properties)) {
-                continue;
-            }
-            int revision = existing == null ? 1 : existing.revision() + 1;
-            java.util.List<String> supersedes = existing == null
-                ? java.util.List.of()
-                : java.util.List.of(existing.ref());
-            model.addArtifact(new Artifact(
-                requirementId,
-                ArtifactKind.REQUIREMENT,
-                revision,
-                properties,
-                supersedes
-            ));
-            if (existing != null) {
-                model.addTrace(new org.github.michaellrowley.sysmlqvt.model.TraceLink(
-                    org.github.michaellrowley.sysmlqvt.model.TraceKind.SUPERSEDES,
-                    existing.ref(),
-                    requirementId + "@"+ revision,
-                    "active",
-                    "qvto.developIntent"
-                ));
-            }
-        }
-    }
 }

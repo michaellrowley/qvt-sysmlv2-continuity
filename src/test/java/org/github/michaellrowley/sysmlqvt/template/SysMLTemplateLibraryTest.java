@@ -15,7 +15,7 @@ class SysMLTemplateLibraryTest {
 
         assertTrue(text.contains("stakeholder need N-BATT-THERMAL"));
         assertTrue(text.contains("behavior B-BATT-THERMAL-CONTROL"));
-        assertEquals(12, result.model().allArtifacts().size());
+        assertEquals(27, result.model().allArtifacts().size());
         assertTrue(
             result.diagnostics().stream()
                 .noneMatch(diagnostic -> "error".equals(diagnostic.severity()))

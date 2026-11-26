@@ -31,6 +31,13 @@ flowchart LR
 This repository does not use a hosted SysML v2 API. Text, trace, and baseline
 data remain local to the files and Git repository.
 
+The `.sysml` files in `examples/` use this repository's intentionally small
+lifecycle notation rather than the complete OMG SysML v2 textual notation.
+Elements such as `stakeholder need`, `behavior`, `implementation`,
+`allocation`, `deployment`, `verification plan`, and `evidence` are a
+domain-specific demonstration dialect, not a claim that every spelling is
+valid in the official Pilot Implementation.
+
 ## Build
 
 ```bash
@@ -78,7 +85,28 @@ java -jar target/sysml-v2-qvt-continuity-1.0.0-SNAPSHOT.jar \
 
 The Eclipse QVT-OML engine loads the transformation, executes it over a
 dynamic EMF/Ecore view of the SysML text model, and returns revised lifecycle
-artifacts. The Java continuity relation pass then materializes trace links.
+artifacts. The Java lifecycle engine restores the complete former operational
+scope, and the Java continuity relation pass enforces the complete former
+relation scope and materializes trace links.
+
+## Check or enforce continuity relations
+
+Run the Java implementation of `ContinuityRelations.qvtr` in check-only mode:
+
+```bash
+java -jar target/sysml-v2-qvt-continuity-1.0.0-SNAPSHOT.jar \
+  relations --input battery.sysml --mode checkonly
+```
+
+Materialize active trace links in enforce mode:
+
+```bash
+java -jar target/sysml-v2-qvt-continuity-1.0.0-SNAPSHOT.jar \
+  relations \
+  --input battery.sysml \
+  --mode enforce \
+  --output relations.sysml
+```
 
 ## Start the LSP
 

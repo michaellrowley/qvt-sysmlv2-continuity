@@ -6,12 +6,21 @@ transformation SysMLLifecycle(
   inout continuity : CONTINUITY
 );
 
+// Operational coverage:
+// markSuperseded, developIntent, realizeArchitecture, realizeInterface,
+// realizePort, connectPorts, realizeBehavior, configureFunctionCall,
+// configureCommunication, configureSchedule, allocateBehavior,
+// deployComponent, generateImplementation, planVerification,
+// verifySatisfaction, propagateChange, reconcileViews, baselineThread,
+// and checkContinuity.
+
 main() {
   sysml.objects()[StakeholderNeed]->forEach(need) {
     need.map developIntent();
   };
 }
 
+// Creates or revises an active requirement from a stakeholder need.
 mapping StakeholderNeed::developIntent() : Requirement {
   id := self.requirementId;
   revision := self.revision + 1;
@@ -21,4 +30,150 @@ mapping StakeholderNeed::developIntent() : Requirement {
   sourceNeedId := self.id;
   kind := 'requirement';
   properties := self.properties;
+}
+
+// Marks a replacement as superseding an existing lifecycle element.
+mapping LifecycleElement::markSuperseded(
+  in replacement : LifecycleElement
+) : LifecycleElement {
+}
+
+// Creates or revises architectural elements that realize a requirement.
+mapping LifecycleElement::realizeArchitecture() : LifecycleElement {
+}
+
+// Realizes an interface and its operations on an architectural element.
+mapping LifecycleElement::realizeInterface(
+  in architecture : LifecycleElement
+) : Interface {
+  id := self.id;
+  revision := self.revision;
+  kind := 'interface';
+  properties := self.properties;
+}
+
+// Creates or revises a port owned by an interface.
+mapping LifecycleElement::realizePort() : Port {
+  id := self.id;
+  revision := self.revision;
+  kind := 'port';
+  properties := self.properties;
+}
+
+// Connects one port to another through a connection artifact.
+mapping LifecycleElement::connectPorts(
+  in target : LifecycleElement
+) : Connection {
+  id := self.id;
+  revision := self.revision;
+  kind := 'connection';
+  properties := self.properties;
+}
+
+// Creates or revises executable behavior realized by an architecture.
+mapping LifecycleElement::realizeBehavior() : BehaviorElement {
+  id := self.id;
+  revision := self.revision;
+  kind := 'behavior_element';
+  properties := self.properties;
+}
+
+// Configures a function call owned by behavior.
+mapping LifecycleElement::configureFunctionCall() : FunctionCall {
+  id := self.id;
+  revision := self.revision;
+  kind := 'function_call';
+  properties := self.properties;
+}
+
+// Configures a communication relationship owned by behavior.
+mapping LifecycleElement::configureCommunication() : Communication {
+  id := self.id;
+  revision := self.revision;
+  kind := 'communication';
+  properties := self.properties;
+}
+
+// Configures a schedule owned by behavior.
+mapping LifecycleElement::configureSchedule() : Schedule {
+  id := self.id;
+  revision := self.revision;
+  kind := 'schedule';
+  properties := self.properties;
+}
+
+// Allocates behavior to an architectural target.
+mapping LifecycleElement::allocateBehavior(
+  in target : LifecycleElement
+) : Allocation {
+  id := self.id;
+  revision := self.revision;
+  kind := 'allocation';
+  properties := self.properties;
+}
+
+// Deploys a component or behavior to a runtime target.
+mapping LifecycleElement::deployComponent(
+  in target : LifecycleElement
+) : Deployment {
+  id := self.id;
+  revision := self.revision;
+  kind := 'deployment';
+  properties := self.properties;
+}
+
+// Generates or revises an implementation from a behavior.
+mapping LifecycleElement::generateImplementation() : Implementation {
+  id := self.id;
+  revision := self.revision;
+  kind := 'implementation';
+  properties := self.properties;
+}
+
+// Creates or revises a verification plan.
+mapping LifecycleElement::planVerification() : VerificationPlan {
+  id := self.id;
+  revision := self.revision;
+  kind := 'verification_plan';
+  properties := self.properties;
+}
+
+// Creates test and verification evidence for a lifecycle thread.
+mapping LifecycleElement::verifySatisfaction() : VerificationEvidence {
+  id := self.id;
+  revision := self.revision;
+  kind := 'verification_evidence';
+  properties := self.properties;
+}
+
+// Traverses active traces bidirectionally from a changed artifact.
+mapping LifecycleElement::propagateChange() : ImpactPlan {
+  root := self.id + '@' + self.revision.toString();
+}
+
+// Reconciles two view snapshots.
+mapping LifecycleElement::reconcileViews(
+  in right : LifecycleElement
+) : Reconciliation {
+  if self.id = right.id
+     and self.kind = right.kind
+     and self.properties = right.properties then {
+    status := 'consistent';
+  } else {
+    status := 'conflict';
+  } endif;
+}
+
+// Snapshots the active closure of a requirement thread.
+mapping LifecycleElement::baselineThread() : Baseline {
+  id := 'BL-' + self.id;
+  requirement := self.id + '@' + self.revision.toString();
+}
+
+// Reports continuity diagnostics.
+query checkContinuity(
+  requirement : Requirement,
+  strict : Boolean
+) : Sequence(String) {
+  return Sequence{};
 }

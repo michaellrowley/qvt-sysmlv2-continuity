@@ -292,9 +292,9 @@ public final class EcoreBridge {
             case VERIFICATION_PLAN -> "LifecycleElement";
             case COMPONENT_TEST, SCENARIO_TEST -> "LifecycleElement";
             case VERIFICATION_EVIDENCE -> "LifecycleElement";
-            case FUNCTION_CALL -> "FunctionCall";
-            case COMMUNICATION -> "Communication";
-            case SCHEDULE -> "Schedule";
+            case FUNCTION_CALL -> "LifecycleElement";
+            case COMMUNICATION -> "LifecycleElement";
+            case SCHEDULE -> "LifecycleElement";
         };
     }
 
