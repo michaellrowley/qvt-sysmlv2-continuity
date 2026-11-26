@@ -10,7 +10,7 @@ from .model import (
     Artifact,
     ArtifactKind,
     BehaviorModel,
-    ContinuityModel,
+    ContinuityRepository,
     content_hash,
 )
 from .relations import ContinuityRelations
@@ -73,7 +73,7 @@ class CodeGenerationSpec:
 
 
 def generate_implementation(
-    model: ContinuityModel,
+    model: ContinuityRepository,
     behavior: Artifact,
     implementation_id: str,
     source: SourceProvider,

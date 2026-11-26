@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 
 from .codegen import CodeGenerationSpec
@@ -13,6 +14,35 @@ from .example import (
     run_battery_example,
 )
 from .model import Artifact, ArtifactKind, BehaviorModel
+from .remote import SysMLV2ApiModel
+
+
+def add_api_options(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--api-url",
+        help="Hosted SysML v2 continuity API base URL",
+    )
+    parser.add_argument(
+        "--api-project",
+        help="Remote API project identifier",
+    )
+    parser.add_argument(
+        "--api-token",
+        default=None,
+        help="Bearer or API-key token (defaults to SYSML_V2_API_TOKEN)",
+    )
+
+
+def build_repository(args: argparse.Namespace):
+    api_url = getattr(args, "api_url", None)
+    if not api_url:
+        return None
+    token = getattr(args, "api_token", None) or os.environ.get("SYSML_V2_API_TOKEN")
+    return SysMLV2ApiModel(
+        api_url,
+        project_id=getattr(args, "api_project", None),
+        token=token,
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -27,12 +57,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="Run the battery thermal-control end-to-end example",
     )
     battery.add_argument("--data", type=Path, help="Optional example JSON file")
+    add_api_options(battery)
 
     impact = subparsers.add_parser(
         "impact",
         help="Show an example requirement-change impact plan",
     )
     impact.add_argument("--data", type=Path, help="Optional example JSON file")
+    add_api_options(impact)
 
     return parser
 
@@ -40,9 +72,10 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     data = load_battery_example(args.data) if hasattr(args, "data") and args.data else None
+    model = build_repository(args)
 
     if args.command == "battery":
-        result = run_battery_example(data)
+        result = run_battery_example(data, model)
         print(json.dumps(result, indent=2, sort_keys=True))
         return 0 if result["passed"] and not result["diagnostics"] else 1
 
@@ -51,7 +84,7 @@ def main(argv: list[str] | None = None) -> int:
         from .codegen import generate_implementation
 
         example_data = data or load_battery_example()
-        engine = LifecycleEngine()
+        engine = LifecycleEngine(model)
         baseline_result = run_battery_example(example_data, engine.model)
         change_data = example_data.get("change", {})
 

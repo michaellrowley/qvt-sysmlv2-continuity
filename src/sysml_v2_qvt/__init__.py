@@ -16,6 +16,7 @@ from .model import (
     BehaviorModel,
     BehaviorTransition,
     CommunicationSpec,
+    ContinuityRepository,
     DeploymentSpec,
     FunctionCallSpec,
     InterfaceSpec,
@@ -27,6 +28,13 @@ from .model import (
     VariableSpec,
 )
 from .relations import ContinuityRelations
+from .remote import (
+    HostedSysMLV2Model,
+    RemoteContinuityModel,
+    RemoteApiError,
+    SysMLV2ApiError,
+    SysMLV2ApiModel,
+)
 
 __all__ = [
     "AllocationSpec",
@@ -38,6 +46,7 @@ __all__ = [
     "BehaviorTransition",
     "CodeGenerationSpec",
     "CommunicationSpec",
+    "ContinuityRepository",
     "ContinuityRelations",
     "DefaultIdentityPolicy",
     "DeploymentSpec",
@@ -49,7 +58,12 @@ __all__ = [
     "OperationSpec",
     "ParameterSpec",
     "PortSpec",
+    "HostedSysMLV2Model",
+    "RemoteContinuityModel",
+    "RemoteApiError",
     "ScheduleSpec",
+    "SysMLV2ApiError",
+    "SysMLV2ApiModel",
     "TraceKind",
     "VariableSpec",
     "generate_implementation",

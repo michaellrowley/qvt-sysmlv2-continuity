@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable, Mapping, Protocol
+from typing import Any, Iterable, Mapping, Protocol
 
 from .model import (
     Artifact,
@@ -13,6 +13,7 @@ from .model import (
     BehaviorModel,
     Conflict,
     ContinuityModel,
+    ContinuityRepository,
     DeploymentSpec,
     ImpactPlan,
     InterfaceSpec,
@@ -141,7 +142,7 @@ class DefaultIdentityPolicy:
 class LifecycleEngine:
     def __init__(
         self,
-        model: ContinuityModel | None = None,
+        model: ContinuityRepository | None = None,
         *,
         identity_policy: IdentityPolicy | None = None,
         kinds: LifecycleKinds | None = None,
@@ -151,6 +152,19 @@ class LifecycleEngine:
         self.identity_policy = identity_policy or DefaultIdentityPolicy()
         self.kinds = kinds or LifecycleKinds()
 
+    def _execute_remote_operation(
+        self,
+        operation: str,
+        arguments: Mapping[str, Any],
+    ) -> tuple[bool, Any]:
+        execute = getattr(self.model, "execute_operation", None)
+        if not callable(execute):
+            return False, None
+        result = execute(operation, arguments)
+        if isinstance(result, Mapping) and "result" in result:
+            result = result["result"]
+        return True, result
+
     def develop_intent(
         self,
         need: Artifact,
@@ -158,6 +172,17 @@ class LifecycleEngine:
     ) -> Artifact:
         if kind_value(need.kind) != kind_value(self.kinds.stakeholder_need):
             raise TypeError("develop_intent requires the configured stakeholder need kind")
+        handled, result = self._execute_remote_operation(
+            "develop_intent",
+            {
+                "need": need.to_dict(),
+                "requirementId": requirement_id,
+            },
+        )
+        if handled:
+            if not isinstance(result, Mapping):
+                raise TypeError("Remote develop_intent returned an invalid artifact")
+            return Artifact.from_dict(result)
         need = self.model.add_artifact(need)
 
         requirement_id = (
@@ -212,6 +237,27 @@ class LifecycleEngine:
     ) -> tuple[Artifact, ...]:
         if kind_value(requirement.kind) != kind_value(self.kinds.requirement):
             raise TypeError("realize_architecture requires the configured requirement kind")
+        element_specs = [
+            dict(element) if isinstance(element, Mapping) else element
+            for element in element_names
+        ]
+        element_names = tuple(element_specs)
+        handled, result = self._execute_remote_operation(
+            "realize_architecture",
+            {
+                "requirement": requirement.to_dict(),
+                "elementNames": element_specs,
+                "elementIds": dict(element_ids or {}),
+            },
+        )
+        if handled:
+            if not isinstance(result, list):
+                raise TypeError("Remote realize_architecture returned invalid artifacts")
+            return tuple(
+                Artifact.from_dict(item)
+                for item in result
+                if isinstance(item, Mapping)
+            )
 
         requirement = self.model.add_artifact(requirement)
         elements: list[Artifact] = []
@@ -299,6 +345,25 @@ class LifecycleEngine:
     ) -> Artifact:
         if kind_value(requirement.kind) != kind_value(self.kinds.requirement):
             raise TypeError("realize_behavior requires the configured requirement kind")
+        architecture_payload = [element.to_dict() for element in architecture]
+        properties_payload = (
+            properties.to_properties()
+            if isinstance(properties, BehaviorModel)
+            else dict(properties)
+        )
+        handled, result = self._execute_remote_operation(
+            "realize_behavior",
+            {
+                "requirement": requirement.to_dict(),
+                "architecture": architecture_payload,
+                "behaviorId": behavior_id,
+                "properties": properties_payload,
+            },
+        )
+        if handled:
+            if not isinstance(result, Mapping):
+                raise TypeError("Remote realize_behavior returned an invalid artifact")
+            return Artifact.from_dict(result)
         requirement = self.model.add_artifact(requirement)
         architecture = tuple(self.model.add_artifact(element) for element in architecture)
 

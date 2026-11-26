@@ -12,7 +12,7 @@ from .model import (
     Artifact,
     ArtifactKind,
     BehaviorModel,
-    ContinuityModel,
+    ContinuityRepository,
 )
 
 
@@ -405,7 +405,7 @@ def run_scenario(
 
 def run_battery_example(
     data: dict[str, Any] | None = None,
-    model: ContinuityModel | None = None,
+    model: ContinuityRepository | None = None,
 ) -> dict[str, Any]:
     data = data or default_battery_example()
     engine = LifecycleEngine(model)

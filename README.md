@@ -41,6 +41,68 @@ Show the change-impact shape:
 .venv/bin/python -m sysml_v2_qvt.cli impact
 ```
 
+## Remote SysML v2 API
+
+The lifecycle engine can store and retrieve revisioned artifacts through an HTTP
+API instead of the in-memory repository. Install the package, then run the
+battery example against a hosted service:
+
+```bash
+.venv/bin/python -m sysml_v2_qvt.cli battery \
+  --api-url https://sysml.example.test \
+  --api-project PROJECT-1 \
+  --api-token "$SYSML_V2_API_TOKEN"
+```
+
+`--api-token` creates a bearer authorization header. `SYSML_V2_API_TOKEN` can
+also provide it. API keys can be supplied through the Python adapter:
+
+```python
+from sysml_v2_qvt import LifecycleEngine, SysMLV2ApiModel
+
+model = SysMLV2ApiModel(
+    "https://sysml.example.test",
+    project_id="PROJECT-1",
+    api_key="project-api-key",
+)
+engine = LifecycleEngine(model)
+```
+
+The default REST contract is:
+
+- `POST/GET /api/v1/artifacts`
+- `GET /api/v1/artifacts/{id}/latest`
+- `GET /api/v1/artifacts/{id}/revisions/{revision}`
+- `POST/GET /api/v1/traces`
+- `POST/GET /api/v1/baselines`
+- `GET /api/v1/baselines/{id}`
+
+When `project_id` is set, these routes are nested under
+`/api/v1/projects/{project_id}`. Custom hosted services can override the
+artifacts, traces, baselines, health, and API-prefix paths through
+`SysMLV2ApiModel`.
+
+## Podman test API
+
+Build and start the included test API with Podman:
+
+```bash
+scripts/run-api-podman.sh
+```
+
+The API listens at `http://127.0.0.1:8080`. Run a lifecycle through it:
+
+```bash
+.venv/bin/python -m sysml_v2_qvt.cli battery \
+  --api-url http://127.0.0.1:8080
+```
+
+Run the containerized integration test:
+
+```bash
+scripts/test-api-podman.sh
+```
+
 ## QVT roles
 
 **QVT-Relations** declares continuity invariants. It can be used in

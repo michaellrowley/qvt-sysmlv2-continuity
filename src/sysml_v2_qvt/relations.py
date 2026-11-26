@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from .model import (
     Artifact,
-    ContinuityModel,
+    ContinuityRepository,
     TraceKind,
     TraceLink,
 )
@@ -13,7 +13,7 @@ from .model import (
 class ContinuityRelations:
     """Enforce trace relations against the executable continuity model."""
 
-    def __init__(self, model: ContinuityModel) -> None:
+    def __init__(self, model: ContinuityRepository) -> None:
         self.model = model
 
     def enforce(

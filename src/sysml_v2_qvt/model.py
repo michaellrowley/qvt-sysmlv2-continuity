@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 import hashlib
 import json
-from typing import Any, Iterable, Mapping
+from typing import Any, Iterable, Mapping, Protocol
 
 
 def canonical_json(value: Any) -> str:
@@ -796,6 +796,17 @@ class Artifact:
             "contentHash": self.content_hash,
         }
 
+    @classmethod
+    def from_dict(cls, value: Mapping[str, Any]) -> "Artifact":
+        return cls(
+            id=str(value["id"]),
+            kind=str(value["kind"]),
+            revision=int(value.get("revision", 1)),
+            properties=dict(value.get("properties") or {}),
+            supersedes=tuple(str(ref) for ref in value.get("supersedes", ())),
+            content_hash=str(value.get("contentHash", value.get("content_hash", ""))),
+        )
+
 
 @dataclass(frozen=True)
 class TraceLink:
@@ -833,6 +844,24 @@ class TraceLink:
             "status": self.status,
             "derivedBy": self.derived_by,
         }
+
+    @classmethod
+    def from_dict(cls, value: Mapping[str, Any]) -> "TraceLink":
+        source = str(value["source"])
+        target = str(value["target"])
+        if "@" not in source or "@" not in target:
+            raise ValueError("Trace links require source and target artifact refs")
+        source_id, source_revision = source.rsplit("@", 1)
+        target_id, target_revision = target.rsplit("@", 1)
+        return cls(
+            kind=str(value["kind"]),
+            source_id=source_id,
+            source_revision=int(source_revision),
+            target_id=target_id,
+            target_revision=int(target_revision),
+            status=str(value.get("status", "active")),
+            derived_by=str(value.get("derivedBy", value.get("derived_by", ""))),
+        )
 
 
 @dataclass(frozen=True)
@@ -889,6 +918,50 @@ class Baseline:
             "traceKeys": [list(key) for key in self.trace_keys],
             "contentHash": self.content_hash,
         }
+
+    @classmethod
+    def from_dict(cls, value: Mapping[str, Any]) -> "Baseline":
+        return cls(
+            id=str(value["id"]),
+            requirement_ref=str(value["requirement"]),
+            artifact_refs=tuple(str(ref) for ref in value.get("artifacts", ())),
+            trace_keys=tuple(
+                tuple(key)
+                for key in value.get("traceKeys", ())
+                if isinstance(key, (list, tuple))
+            ),
+            content_hash=str(value.get("contentHash", value.get("content_hash", ""))),
+        )
+
+
+class ContinuityRepository(Protocol):
+    """Storage contract shared by in-memory and hosted repository adapters."""
+
+    def add_artifact(self, artifact: Artifact) -> Artifact: ...
+
+    def latest(self, artifact_id: str) -> Artifact: ...
+
+    def get(self, artifact_ref: str) -> Artifact: ...
+
+    def all_artifacts(self) -> tuple[Artifact, ...]: ...
+
+    def latest_artifacts(self) -> tuple[Artifact, ...]: ...
+
+    def materialize_trace(
+        self,
+        kind: TraceKind | str,
+        source: Artifact,
+        target: Artifact,
+        derived_by: str,
+    ) -> TraceLink: ...
+
+    def active_traces(self) -> tuple[TraceLink, ...]: ...
+
+    def add_baseline(self, baseline: Baseline) -> Baseline: ...
+
+    def baseline(self, baseline_id: str) -> Baseline: ...
+
+    def baselines(self) -> tuple[Baseline, ...]: ...
 
 
 class ContinuityModel:
