@@ -20,28 +20,6 @@ Use `IdentityPolicy`/`DefaultIdentityPolicy` to control stable IDs for needs,
 requirements, architecture elements, tests, and baselines. Domain values belong
 in artifact properties and supplied data, not in the lifecycle engine.
 
-## Repository layout
-
-```text
-qvt/
-  ContinuityRelations.qvtr       Declarative continuity invariants
-  LifecycleOperational.qvto      Executable lifecycle operations
-  README.md                      Adapter metamodel notes
-src/sysml_v2_qvt/
-  model.py                       Revisions, traces, baselines, impacts
-  lifecycle.py                   Lifecycle operation implementations
-  codegen.py                     Generic behavior-to-source adapter
-  example.py                     Battery thermal-control example adapter
-  cli.py                         Command-line entry point
-examples/
-  battery_thermal.json           Complete example data
-  battery_thermal_controller.py  Generated-style controller
-tests/
-  test_lifecycle.py
-  test_example.py
-  test_codegen.py
-```
-
 ## Quick start
 
 ```bash
