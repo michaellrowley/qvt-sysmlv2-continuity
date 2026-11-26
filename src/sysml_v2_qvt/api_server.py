@@ -12,8 +12,15 @@ from urllib.parse import parse_qs, unquote, urlsplit
 from .model import (
     Artifact,
     Baseline,
+    BehaviorModel,
+    AllocationSpec,
+    DeploymentSpec,
+    InterfaceSpec,
+    PortSpec,
     TraceLink,
 )
+from .codegen import CodeGenerationSpec, generate_implementation
+from .lifecycle import LifecycleEngine
 
 
 class RepositoryStore:
@@ -83,6 +90,24 @@ class RepositoryStore:
     def baselines(self) -> tuple[Baseline, ...]:
         return tuple(sorted(self._baselines.values(), key=lambda item: item.id))
 
+    def materialize_trace(
+        self,
+        kind: Any,
+        source: Artifact,
+        target: Artifact,
+        derived_by: str,
+    ) -> TraceLink:
+        link = TraceLink(
+            kind=kind,
+            source_id=source.id,
+            source_revision=source.revision,
+            target_id=target.id,
+            target_revision=target.revision,
+            status="active",
+            derived_by=derived_by,
+        )
+        return self.add_trace(link)
+
 
 class SysMLV2TestServer(ThreadingHTTPServer):
     daemon_threads = True
@@ -148,7 +173,16 @@ class SysMLV2TestHandler(BaseHTTPRequestHandler):
             if project_index + 1 < len(segments):
                 project_id = segments[project_index + 1]
 
-        for resource in ("artifacts", "elements", "traces", "relationships", "links", "baselines", "health"):
+        for resource in (
+            "artifacts",
+            "elements",
+            "traces",
+            "relationships",
+            "links",
+            "baselines",
+            "operations",
+            "health",
+        ):
             if resource in segments:
                 resource_index = segments.index(resource)
                 remainder = segments[resource_index + 1:]
@@ -254,6 +288,230 @@ class SysMLV2TestHandler(BaseHTTPRequestHandler):
 
         self._send_json(404, {"error": "Not found"})
 
+    @staticmethod
+    def _serialize_result(value: Any) -> Any:
+        if hasattr(value, "to_dict") and callable(value.to_dict):
+            return value.to_dict()
+        if isinstance(value, tuple):
+            return [SysMLV2TestHandler._serialize_result(item) for item in value]
+        if isinstance(value, list):
+            return [SysMLV2TestHandler._serialize_result(item) for item in value]
+        if isinstance(value, dict):
+            return {
+                str(key): SysMLV2TestHandler._serialize_result(item)
+                for key, item in value.items()
+            }
+        return value
+
+    @staticmethod
+    def _artifact(value: Any, store: RepositoryStore) -> Artifact:
+        if isinstance(value, Artifact):
+            return value
+        if isinstance(value, Mapping):
+            return Artifact.from_dict(value)
+        if isinstance(value, str):
+            return store.get(value)
+        raise TypeError("Expected an artifact or artifact reference")
+
+    def _execute_operation(
+        self,
+        operation: str,
+        arguments: Mapping[str, Any],
+        store: RepositoryStore,
+    ) -> Any:
+        engine = LifecycleEngine(store)
+
+        if operation == "develop_intent":
+            return engine.develop_intent(
+                Artifact.from_dict(arguments["need"]),
+                arguments.get("requirementId"),
+            )
+
+        if operation == "realize_architecture":
+            return engine.realize_architecture(
+                Artifact.from_dict(arguments["requirement"]),
+                tuple(arguments.get("elementNames", ())),
+                dict(arguments.get("elementIds") or {}),
+            )
+
+        if operation == "realize_behavior":
+            return engine.realize_behavior(
+                Artifact.from_dict(arguments["requirement"]),
+                tuple(
+                    Artifact.from_dict(item)
+                    for item in arguments.get("architecture", ())
+                    if isinstance(item, Mapping)
+                ),
+                str(arguments["behaviorId"]),
+                dict(arguments.get("properties") or {}),
+            )
+
+        if operation == "realize_interface":
+            interface_value = arguments["interface"]
+            interface_spec: InterfaceSpec | Mapping[str, Any] | str
+            if isinstance(interface_value, Mapping):
+                interface_spec = InterfaceSpec.from_dict(interface_value)
+            else:
+                interface_spec = str(interface_value)
+            return engine.realize_interface(
+                Artifact.from_dict(arguments["requirement"]),
+                Artifact.from_dict(arguments["architecture"]),
+                str(arguments["interfaceId"]),
+                interface_spec,
+                properties=dict(arguments.get("properties") or {}),
+            )
+
+        if operation == "realize_port":
+            port_value = arguments["port"]
+            port_spec: PortSpec | Mapping[str, Any] | str
+            if isinstance(port_value, Mapping):
+                port_spec = PortSpec.from_dict(port_value)
+            else:
+                port_spec = str(port_value)
+            return engine.realize_port(
+                Artifact.from_dict(arguments["interface"]),
+                port_spec,
+                port_id=arguments.get("portId"),
+            )
+
+        if operation == "connect_ports":
+            return engine.connect_ports(
+                Artifact.from_dict(arguments["sourcePort"]),
+                Artifact.from_dict(arguments["targetPort"]),
+                connection_id=str(arguments["connectionId"]),
+                properties=dict(arguments.get("properties") or {}),
+            )
+
+        if operation == "allocate_behavior":
+            allocation_value = arguments.get("allocation")
+            allocation: AllocationSpec | Mapping[str, Any] | None
+            if isinstance(allocation_value, Mapping):
+                allocation = AllocationSpec.from_dict(allocation_value)
+            else:
+                allocation = None
+            return engine.allocate_behavior(
+                Artifact.from_dict(arguments["behavior"]),
+                Artifact.from_dict(arguments["target"]),
+                allocation_id=arguments.get("allocationId"),
+                allocation=allocation,
+                properties=dict(arguments.get("properties") or {}),
+            )
+
+        if operation == "deploy_component":
+            deployment_value = arguments.get("deployment")
+            deployment: DeploymentSpec | Mapping[str, Any] | None
+            if isinstance(deployment_value, Mapping):
+                deployment = DeploymentSpec.from_dict(deployment_value)
+            else:
+                deployment = None
+            return engine.deploy_component(
+                Artifact.from_dict(arguments["component"]),
+                Artifact.from_dict(arguments["target"]),
+                deployment_id=arguments.get("deploymentId"),
+                deployment=deployment,
+            )
+
+        if operation == "plan_verification":
+            implementation_value = arguments.get("implementation")
+            implementation = (
+                Artifact.from_dict(implementation_value)
+                if isinstance(implementation_value, Mapping)
+                else None
+            )
+            return engine.plan_verification(
+                Artifact.from_dict(arguments["requirement"]),
+                Artifact.from_dict(arguments["behavior"]),
+                implementation=implementation,
+                plan_id=arguments.get("planId"),
+                strategy=str(arguments.get("strategy", "")),
+                test_levels=tuple(arguments.get("testLevels", ())),
+                environments=tuple(arguments.get("environments", ())),
+                properties=dict(arguments.get("properties") or {}),
+            )
+
+        if operation == "verify_satisfaction":
+            implementation_value = arguments.get("implementation")
+            implementation = (
+                Artifact.from_dict(implementation_value)
+                if isinstance(implementation_value, Mapping)
+                else None
+            )
+            verification_plan_value = arguments.get("verificationPlan")
+            verification_plan: Artifact | str | None
+            if isinstance(verification_plan_value, Mapping):
+                verification_plan = Artifact.from_dict(verification_plan_value)
+            elif isinstance(verification_plan_value, str):
+                verification_plan = verification_plan_value
+            else:
+                verification_plan = None
+            evidence, component_tests, scenario_tests = engine.verify_satisfaction(
+                Artifact.from_dict(arguments["requirement"]),
+                Artifact.from_dict(arguments["behavior"]),
+                evidence_id=str(arguments["evidenceId"]),
+                result=str(arguments["result"]),
+                summary=str(arguments["summary"]),
+                component_cases=tuple(arguments.get("componentCases", ())),
+                simulated_scenarios=tuple(arguments.get("simulatedScenarios", ())),
+                implementation=implementation,
+                verification_plan=verification_plan,
+                execution_environment=dict(arguments.get("executionEnvironment") or {}),
+            )
+            return {
+                "evidence": evidence.to_dict(),
+                "componentTests": [test.to_dict() for test in component_tests],
+                "scenarioTests": [test.to_dict() for test in scenario_tests],
+            }
+
+        if operation == "propagate_change":
+            plan = engine.propagate_change(
+                Artifact.from_dict(arguments["root"])
+            )
+            return plan.to_dict()
+
+        if operation == "reconcile_views":
+            return engine.reconcile_views(
+                self._artifact(arguments["left"], store),
+                self._artifact(arguments["right"], store),
+            ).to_dict()
+
+        if operation == "baseline_thread":
+            return engine.baseline_thread(
+                Artifact.from_dict(arguments["requirement"])
+            ).to_dict()
+
+        if operation == "check_continuity":
+            return list(
+                engine.check_continuity(
+                    Artifact.from_dict(arguments["requirement"]),
+                    strict=bool(arguments.get("strict", False)),
+                )
+            )
+
+        if operation == "generate_implementation":
+            code_generation_value = arguments.get("codeGeneration")
+            code_generation = (
+                CodeGenerationSpec.from_dict(code_generation_value)
+                if isinstance(code_generation_value, Mapping)
+                else None
+            )
+            implementation, source = generate_implementation(
+                store,
+                Artifact.from_dict(arguments["behavior"]),
+                str(arguments["implementationId"]),
+                str(arguments["source"]),
+                language=arguments.get("language"),
+                entry_point=arguments.get("entryPoint"),
+                implementation_kind=str(arguments.get("implementationKind", "implementation")),
+                extra_properties=dict(arguments.get("extraProperties") or {}),
+                code_generation=code_generation,
+            )
+            return {
+                "implementation": implementation.to_dict(),
+                "source": source,
+            }
+
+        raise KeyError(f"Unknown lifecycle operation: {operation}")
+
     def do_POST(self) -> None:
         if not self._authorized():
             self._send_json(401, {"error": "Unauthorized"})
@@ -263,6 +521,31 @@ class SysMLV2TestHandler(BaseHTTPRequestHandler):
         try:
             body = self._read_json()
         except (json.JSONDecodeError, ValueError):
+            return
+
+        if resource == "operations":
+            operation = remainder[0] if remainder else str(body.get("operation", ""))
+            arguments = body.get("arguments")
+            if not isinstance(arguments, Mapping):
+                arguments = {}
+            try:
+                result = self._execute_operation(operation, arguments, store)
+            except KeyError as exc:
+                self._send_json(404, {"error": str(exc)})
+                return
+            except (TypeError, ValueError) as exc:
+                self._send_json(400, {"error": str(exc)})
+                return
+            except Exception as exc:
+                self._send_json(500, {"error": str(exc)})
+                return
+            self._send_json(
+                200,
+                {
+                    "operation": operation,
+                    "result": self._serialize_result(result),
+                },
+            )
             return
 
         if resource in ("artifacts", "elements"):

@@ -12,6 +12,7 @@ from .model import (
     BehaviorModel,
     ContinuityRepository,
     content_hash,
+    kind_value,
 )
 from .relations import ContinuityRelations
 
@@ -84,9 +85,41 @@ def generate_implementation(
     extra_properties: Mapping[str, Any] | None = None,
     code_generation: CodeGenerationSpec | Mapping[str, Any] | None = None,
 ) -> tuple[Artifact, str]:
+    source_text = source(behavior) if callable(source) else source
+    code_generation_payload: dict[str, Any] | None
+    if isinstance(code_generation, CodeGenerationSpec):
+        code_generation_payload = code_generation.to_dict()
+    elif isinstance(code_generation, Mapping):
+        code_generation_payload = dict(code_generation)
+    else:
+        code_generation_payload = None
+    execute = getattr(model, "execute_operation", None)
+    if callable(execute):
+        result = execute(
+            "generate_implementation",
+            {
+                "behavior": behavior.to_dict(),
+                "implementationId": implementation_id,
+                "source": source_text,
+                "language": language,
+                "entryPoint": entry_point,
+                "implementationKind": kind_value(implementation_kind),
+                "extraProperties": dict(extra_properties or {}),
+                "codeGeneration": code_generation_payload,
+            },
+        )
+        if isinstance(result, Mapping) and "result" in result:
+            result = result["result"]
+        if not isinstance(result, Mapping):
+            raise TypeError("Remote generate_implementation returned an invalid result")
+        implementation_value = result.get("implementation")
+        remote_source = result.get("source")
+        if not isinstance(implementation_value, Mapping) or not isinstance(remote_source, str):
+            raise TypeError("Remote generate_implementation omitted implementation or source")
+        return Artifact.from_dict(implementation_value), remote_source
+
     behavior = model.add_artifact(behavior)
     relations = ContinuityRelations(model)
-    source_text = source(behavior) if callable(source) else source
     digest = content_hash(source_text)
     spec = (
         CodeGenerationSpec.from_dict(code_generation)

@@ -418,6 +418,27 @@ class LifecycleEngine:
     ) -> Artifact:
         if kind_value(requirement.kind) != kind_value(self.kinds.requirement):
             raise TypeError("realize_interface requires the configured requirement kind")
+        interface_payload: Any
+        if isinstance(interface, InterfaceSpec):
+            interface_payload = interface.to_dict()
+        elif isinstance(interface, Mapping):
+            interface_payload = dict(interface)
+        else:
+            interface_payload = interface
+        handled, result = self._execute_remote_operation(
+            "realize_interface",
+            {
+                "requirement": requirement.to_dict(),
+                "architecture": architecture.to_dict(),
+                "interfaceId": interface_id,
+                "interface": interface_payload,
+                "properties": dict(properties or {}),
+            },
+        )
+        if handled:
+            if not isinstance(result, Mapping):
+                raise TypeError("Remote realize_interface returned an invalid artifact")
+            return Artifact.from_dict(result)
         requirement = self.model.add_artifact(requirement)
         architecture = self.model.add_artifact(architecture)
         if isinstance(interface, InterfaceSpec):
@@ -492,6 +513,25 @@ class LifecycleEngine:
         *,
         port_id: str | None = None,
     ) -> Artifact:
+        port_payload: Any
+        if isinstance(port, PortSpec):
+            port_payload = port.to_dict()
+        elif isinstance(port, Mapping):
+            port_payload = dict(port)
+        else:
+            port_payload = port
+        handled, result = self._execute_remote_operation(
+            "realize_port",
+            {
+                "interface": interface.to_dict(),
+                "port": port_payload,
+                "portId": port_id,
+            },
+        )
+        if handled:
+            if not isinstance(result, Mapping):
+                raise TypeError("Remote realize_port returned an invalid artifact")
+            return Artifact.from_dict(result)
         interface = self.model.add_artifact(interface)
         if isinstance(port, PortSpec):
             spec = port
@@ -543,6 +583,19 @@ class LifecycleEngine:
         connection_id: str,
         properties: Mapping[str, object] | None = None,
     ) -> Artifact:
+        handled, result = self._execute_remote_operation(
+            "connect_ports",
+            {
+                "sourcePort": source_port.to_dict(),
+                "targetPort": target_port.to_dict(),
+                "connectionId": connection_id,
+                "properties": dict(properties or {}),
+            },
+        )
+        if handled:
+            if not isinstance(result, Mapping):
+                raise TypeError("Remote connect_ports returned an invalid artifact")
+            return Artifact.from_dict(result)
         source_port = self.model.add_artifact(source_port)
         target_port = self.model.add_artifact(target_port)
         complete_properties = {
@@ -594,6 +647,27 @@ class LifecycleEngine:
         allocation: AllocationSpec | Mapping[str, object] | None = None,
         properties: Mapping[str, object] | None = None,
     ) -> Artifact:
+        allocation_payload: Any
+        if isinstance(allocation, AllocationSpec):
+            allocation_payload = allocation.to_dict()
+        elif isinstance(allocation, Mapping):
+            allocation_payload = dict(allocation)
+        else:
+            allocation_payload = None
+        handled, result = self._execute_remote_operation(
+            "allocate_behavior",
+            {
+                "behavior": behavior.to_dict(),
+                "target": target.to_dict(),
+                "allocationId": allocation_id,
+                "allocation": allocation_payload,
+                "properties": dict(properties or {}),
+            },
+        )
+        if handled:
+            if not isinstance(result, Mapping):
+                raise TypeError("Remote allocate_behavior returned an invalid artifact")
+            return Artifact.from_dict(result)
         behavior = self.model.add_artifact(behavior)
         target = self.model.add_artifact(target)
         resolved_id = allocation_id
@@ -665,6 +739,26 @@ class LifecycleEngine:
         deployment_id: str | None = None,
         deployment: DeploymentSpec | Mapping[str, object] | None = None,
     ) -> Artifact:
+        deployment_payload: Any
+        if isinstance(deployment, DeploymentSpec):
+            deployment_payload = deployment.to_dict()
+        elif isinstance(deployment, Mapping):
+            deployment_payload = dict(deployment)
+        else:
+            deployment_payload = None
+        handled, result = self._execute_remote_operation(
+            "deploy_component",
+            {
+                "component": component.to_dict(),
+                "target": target.to_dict(),
+                "deploymentId": deployment_id,
+                "deployment": deployment_payload,
+            },
+        )
+        if handled:
+            if not isinstance(result, Mapping):
+                raise TypeError("Remote deploy_component returned an invalid artifact")
+            return Artifact.from_dict(result)
         component = self.model.add_artifact(component)
         target = self.model.add_artifact(target)
         resolved_id = deployment_id
@@ -736,6 +830,27 @@ class LifecycleEngine:
         environments: Iterable[str] = (),
         properties: Mapping[str, object] | None = None,
     ) -> Artifact:
+        handled, result = self._execute_remote_operation(
+            "plan_verification",
+            {
+                "requirement": requirement.to_dict(),
+                "behavior": behavior.to_dict(),
+                "implementation": (
+                    implementation.to_dict()
+                    if implementation is not None
+                    else None
+                ),
+                "planId": plan_id,
+                "strategy": strategy,
+                "testLevels": list(test_levels),
+                "environments": list(environments),
+                "properties": dict(properties or {}),
+            },
+        )
+        if handled:
+            if not isinstance(result, Mapping):
+                raise TypeError("Remote plan_verification returned an invalid artifact")
+            return Artifact.from_dict(result)
         requirement = self.model.add_artifact(requirement)
         behavior = self.model.add_artifact(behavior)
         if implementation is not None:
@@ -810,6 +925,54 @@ class LifecycleEngine:
         verification_plan: Artifact | str | None = None,
         execution_environment: Mapping[str, object] | None = None,
     ) -> tuple[Artifact, tuple[Artifact, ...], tuple[Artifact, ...]]:
+        component_cases = tuple(component_cases)
+        simulated_scenarios = tuple(simulated_scenarios)
+        if isinstance(verification_plan, Artifact):
+            verification_plan_payload: Any = verification_plan.to_dict()
+        else:
+            verification_plan_payload = verification_plan
+        handled, remote_result = self._execute_remote_operation(
+            "verify_satisfaction",
+            {
+                "requirement": requirement.to_dict(),
+                "behavior": behavior.to_dict(),
+                "evidenceId": evidence_id,
+                "result": result,
+                "summary": summary,
+                "componentCases": [dict(case) for case in component_cases],
+                "simulatedScenarios": [dict(case) for case in simulated_scenarios],
+                "implementation": (
+                    implementation.to_dict()
+                    if implementation is not None
+                    else None
+                ),
+                "verificationPlan": verification_plan_payload,
+                "executionEnvironment": dict(execution_environment or {}),
+            },
+        )
+        if handled:
+            if not isinstance(remote_result, Mapping):
+                raise TypeError("Remote verify_satisfaction returned an invalid result")
+            evidence_value = remote_result.get("evidence")
+            component_value = remote_result.get("componentTests")
+            scenario_value = remote_result.get("scenarioTests")
+            if not isinstance(evidence_value, Mapping):
+                raise TypeError("Remote verify_satisfaction omitted evidence")
+            if not isinstance(component_value, list) or not isinstance(scenario_value, list):
+                raise TypeError("Remote verify_satisfaction returned invalid test lists")
+            return (
+                Artifact.from_dict(evidence_value),
+                tuple(
+                    Artifact.from_dict(item)
+                    for item in component_value
+                    if isinstance(item, Mapping)
+                ),
+                tuple(
+                    Artifact.from_dict(item)
+                    for item in scenario_value
+                    if isinstance(item, Mapping)
+                ),
+            )
         if kind_value(requirement.kind) != kind_value(self.kinds.requirement):
             raise TypeError("verify_satisfaction requires the configured requirement kind")
         if kind_value(behavior.kind) != kind_value(self.kinds.behavior_element):
@@ -982,6 +1145,25 @@ class LifecycleEngine:
         return evidence, tuple(component_artifacts), tuple(scenario_artifacts)
 
     def propagate_change(self, root: Artifact) -> ImpactPlan:
+        handled, result = self._execute_remote_operation(
+            "propagate_change",
+            {"root": root.to_dict()},
+        )
+        if handled:
+            if not isinstance(result, Mapping):
+                raise TypeError("Remote propagate_change returned an invalid impact plan")
+            return ImpactPlan(
+                root=str(result["root"]),
+                impacted=tuple(str(ref) for ref in result.get("impacted", ())),
+                invalidatedEvidence=tuple(
+                    str(ref)
+                    for ref in result.get("invalidatedEvidence", ())
+                ),
+                invalidatedArtifacts=tuple(
+                    str(ref)
+                    for ref in result.get("invalidatedArtifacts", ())
+                ),
+            )
         root = self.model.add_artifact(root)
         visited: set[str] = {root.ref}
         queue: list[str] = [root.ref]
@@ -1040,6 +1222,32 @@ class LifecycleEngine:
         left: Artifact | str,
         right: Artifact | str,
     ) -> Reconciliation:
+        left_payload = left.to_dict() if isinstance(left, Artifact) else left
+        right_payload = right.to_dict() if isinstance(right, Artifact) else right
+        handled, result = self._execute_remote_operation(
+            "reconcile_views",
+            {
+                "left": left_payload,
+                "right": right_payload,
+            },
+        )
+        if handled:
+            if not isinstance(result, Mapping):
+                raise TypeError("Remote reconcile_views returned an invalid reconciliation")
+            conflicts_value = result.get("conflicts", ())
+            conflicts = tuple(
+                Conflict(
+                    left=str(conflict["left"]),
+                    right=str(conflict["right"]),
+                    reason=str(conflict["reason"]),
+                )
+                for conflict in conflicts_value
+                if isinstance(conflict, Mapping)
+            )
+            return Reconciliation(
+                status=str(result["status"]),
+                conflicts=conflicts,
+            )
         left_artifact = left if isinstance(left, Artifact) else self.model.get(left)
         right_artifact = right if isinstance(right, Artifact) else self.model.get(right)
 
@@ -1074,6 +1282,14 @@ class LifecycleEngine:
         return Reconciliation(status="consistent")
 
     def baseline_thread(self, requirement: Artifact) -> Baseline:
+        handled, result = self._execute_remote_operation(
+            "baseline_thread",
+            {"requirement": requirement.to_dict()},
+        )
+        if handled:
+            if not isinstance(result, Mapping):
+                raise TypeError("Remote baseline_thread returned an invalid baseline")
+            return Baseline.from_dict(result)
         requirement = self.model.add_artifact(requirement)
         visited: set[str] = {requirement.ref}
         queue: list[str] = [requirement.ref]
@@ -1124,6 +1340,17 @@ class LifecycleEngine:
         *,
         strict: bool = False,
     ) -> tuple[str, ...]:
+        handled, result = self._execute_remote_operation(
+            "check_continuity",
+            {
+                "requirement": requirement.to_dict(),
+                "strict": strict,
+            },
+        )
+        if handled:
+            if not isinstance(result, list):
+                raise TypeError("Remote check_continuity returned invalid diagnostics")
+            return tuple(str(diagnostic) for diagnostic in result)
         requirement = self.model.add_artifact(requirement)
         traces = self.model.active_traces()
         diagnostics: list[str] = []

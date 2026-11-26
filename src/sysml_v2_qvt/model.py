@@ -798,9 +798,14 @@ class Artifact:
 
     @classmethod
     def from_dict(cls, value: Mapping[str, Any]) -> "Artifact":
+        kind_value = str(value["kind"])
+        try:
+            kind: ArtifactKind | str = ArtifactKind(kind_value)
+        except ValueError:
+            kind = kind_value
         return cls(
             id=str(value["id"]),
-            kind=str(value["kind"]),
+            kind=kind,
             revision=int(value.get("revision", 1)),
             properties=dict(value.get("properties") or {}),
             supersedes=tuple(str(ref) for ref in value.get("supersedes", ())),
@@ -853,8 +858,13 @@ class TraceLink:
             raise ValueError("Trace links require source and target artifact refs")
         source_id, source_revision = source.rsplit("@", 1)
         target_id, target_revision = target.rsplit("@", 1)
+        kind_value = str(value["kind"])
+        try:
+            kind: TraceKind | str = TraceKind(kind_value)
+        except ValueError:
+            kind = kind_value
         return cls(
-            kind=str(value["kind"]),
+            kind=kind,
             source_id=source_id,
             source_revision=int(source_revision),
             target_id=target_id,

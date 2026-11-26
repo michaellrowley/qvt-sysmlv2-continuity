@@ -101,6 +101,10 @@ def test_remote_api_runs_full_battery_lifecycle(remote_api):
     assert remote_api.latest("R-BATT-THERMAL").ref == "R-BATT-THERMAL@1"
     assert remote_api.baseline(result["baseline"]["id"]).id == result["baseline"]["id"]
     assert remote_api.active_traces()
+    assert any(
+        trace.kind is TraceKind.GENERATES
+        for trace in remote_api.active_traces()
+    )
 
 
 def test_remote_api_supports_project_scope_and_bearer_auth():

@@ -76,6 +76,7 @@ The default REST contract is:
 - `POST/GET /api/v1/traces`
 - `POST/GET /api/v1/baselines`
 - `GET /api/v1/baselines/{id}`
+- `POST /api/v1/operations/{operation}`
 
 When `project_id` is set, these routes are nested under
 `/api/v1/projects/{project_id}`. Custom hosted services can override the
