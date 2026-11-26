@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 from .codegen import generate_implementation
 from .lifecycle import LifecycleEngine
@@ -15,6 +15,7 @@ def default_battery_example() -> dict[str, Any]:
     return {
         "need": {
             "id": "N-BATT-THERMAL",
+            "requirementId": "R-BATT-THERMAL",
             "statement": (
                 "Keep the battery within 20 to 30 degrees Celsius during normal "
                 "operation and force safe-off after a temperature-sensor fault."
@@ -121,25 +122,55 @@ def load_battery_example(path: str | Path | None = None) -> dict[str, Any]:
         return json.load(stream)
 
 
+def generate_battery_controller_source(behavior: Artifact) -> str:
+    heat_below = float(behavior.properties["heatBelowC"])
+    off_above = float(behavior.properties["offAboveC"])
+    return f'''HEAT_BELOW_C = {heat_below:.1f}
+OFF_ABOVE_C = {off_above:.1f}
+SAFE_OFF = "SAFE_OFF"
+
+
 def generate_heater_command(
     temperature_c: float,
     sensor_valid: bool = True,
     current_state: str = "HOLD",
 ) -> str:
     if not sensor_valid:
-        return "SAFE_OFF"
-    if temperature_c < 24.0:
+        return SAFE_OFF
+    if temperature_c < HEAT_BELOW_C:
         return "HEAT"
-    if temperature_c > 26.0:
+    if temperature_c > OFF_ABOVE_C:
+        return "OFF"
+    return current_state
+'''
+
+
+def generate_heater_command(
+    temperature_c: float,
+    sensor_valid: bool = True,
+    current_state: str = "HOLD",
+    heat_below_c: float = 24.0,
+    off_above_c: float = 26.0,
+) -> str:
+    if not sensor_valid:
+        return "SAFE_OFF"
+    if temperature_c < heat_below_c:
+        return "HEAT"
+    if temperature_c > off_above_c:
         return "OFF"
     return current_state
 
 
-def run_component_case(case: dict[str, Any]) -> dict[str, Any]:
+def run_component_case(
+    case: dict[str, Any],
+    behavior: Mapping[str, Any],
+) -> dict[str, Any]:
     actual = generate_heater_command(
         float(case["temperatureC"]),
         bool(case["sensorValid"]),
         str(case["currentState"]),
+        float(behavior["heatBelowC"]),
+        float(behavior["offAboveC"]),
     )
     return {
         "id": case["id"],
@@ -149,7 +180,10 @@ def run_component_case(case: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def run_scenario(scenario: dict[str, Any]) -> dict[str, Any]:
+def run_scenario(
+    scenario: dict[str, Any],
+    behavior: Mapping[str, Any],
+) -> dict[str, Any]:
     temperature = float(scenario["initialTemperatureC"])
     ambient = float(scenario["ambientTemperatureC"])
     state = "HOLD"
@@ -161,7 +195,13 @@ def run_scenario(scenario: dict[str, Any]) -> dict[str, Any]:
             scenario.get("faultStep") is not None
             and step == int(scenario["faultStep"])
         )
-        command = generate_heater_command(temperature, sensor_valid, state)
+        command = generate_heater_command(
+            temperature,
+            sensor_valid,
+            state,
+            float(behavior["heatBelowC"]),
+            float(behavior["offAboveC"]),
+        )
         state = "SAFE_OFF" if command == "SAFE_OFF" else state
         commands.append(command)
         temperatures.append(temperature)
@@ -207,13 +247,22 @@ def run_battery_example(
                 "statement": need_data["statement"],
                 "rationale": need_data["rationale"],
                 "acceptanceCriteria": need_data["acceptanceCriteria"],
+                **(
+                    {"requirementId": need_data["requirementId"]}
+                    if "requirementId" in need_data
+                    else {}
+                ),
             },
         )
     )
-    requirement = engine.develop_intent(need)
+    requirement = engine.develop_intent(
+        need,
+        need_data.get("requirementId"),
+    )
     architecture = engine.realize_architecture(
         requirement,
         data["architecture"],
+        data.get("architectureIds"),
     )
 
     behavior_data = data["behavior"]
@@ -233,13 +282,18 @@ def run_battery_example(
         engine.model,
         behavior,
         data["implementation"]["id"],
+        generate_battery_controller_source,
+        language="Python",
+        entry_point="generate_heater_command",
     )
 
     component_results = [
-        run_component_case(case) for case in data["componentCases"]
+        run_component_case(case, behavior_properties)
+        for case in data["componentCases"]
     ]
     scenario_results = [
-        run_scenario(scenario) for scenario in data["scenarios"]
+        run_scenario(scenario, behavior_properties)
+        for scenario in data["scenarios"]
     ]
     all_passed = (
         all(result["passed"] for result in component_results)

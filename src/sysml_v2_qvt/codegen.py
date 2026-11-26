@@ -2,48 +2,40 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable, Mapping
+from typing import Any
+
 from .model import Artifact, ArtifactKind, ContinuityModel, TraceKind, content_hash
 
 
-def generate_controller_source(behavior: Artifact) -> str:
-    """Render a small controller implementation from behavior properties."""
-    heat_below = float(behavior.properties["heatBelowC"])
-    off_above = float(behavior.properties["offAboveC"])
-    return f'''HEAT_BELOW_C = {heat_below:.1f}
-OFF_ABOVE_C = {off_above:.1f}
-SAFE_OFF = "SAFE_OFF"
-
-
-def generate_heater_command(
-    temperature_c: float,
-    sensor_valid: bool = True,
-    current_state: str = "HOLD",
-) -> str:
-    if not sensor_valid:
-        return SAFE_OFF
-    if temperature_c < HEAT_BELOW_C:
-        return "HEAT"
-    if temperature_c > OFF_ABOVE_C:
-        return "OFF"
-    return current_state
-'''
+SourceProvider = Callable[[Artifact], str] | str
 
 
 def generate_implementation(
     model: ContinuityModel,
     behavior: Artifact,
     implementation_id: str,
+    source: SourceProvider,
+    *,
+    language: str | None = None,
+    entry_point: str | None = None,
+    implementation_kind: ArtifactKind | str = ArtifactKind.IMPLEMENTATION,
+    extra_properties: Mapping[str, Any] | None = None,
 ) -> tuple[Artifact, str]:
     behavior = model.add_artifact(behavior)
-    source = generate_controller_source(behavior)
-    digest = content_hash(source)
+    source_text = source(behavior) if callable(source) else source
+    digest = content_hash(source_text)
     properties = {
-        "language": "Python",
         "sourceBehavior": behavior.ref,
         "sourceHash": behavior.content_hash,
         "contentHash": digest,
-        "entryPoint": "generate_heater_command",
     }
+    if language is not None:
+        properties["language"] = language
+    if entry_point is not None:
+        properties["entryPoint"] = entry_point
+    if extra_properties:
+        properties.update(extra_properties)
 
     try:
         existing = model.latest(implementation_id)
@@ -57,7 +49,7 @@ def generate_implementation(
         supersedes = (existing.ref,) if existing is not None else ()
         implementation = Artifact(
             id=implementation_id,
-            kind=ArtifactKind.IMPLEMENTATION,
+            kind=implementation_kind,
             revision=revision,
             properties=properties,
             supersedes=supersedes,
@@ -83,4 +75,4 @@ def generate_implementation(
         behavior,
         "deterministic_codegen",
     )
-    return implementation, source
+    return implementation, source_text

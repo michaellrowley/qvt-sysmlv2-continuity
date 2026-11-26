@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Iterable, Mapping
+from dataclasses import dataclass
+from typing import Iterable, Mapping, Protocol
 
 from .model import (
     Artifact,
@@ -16,6 +17,8 @@ from .model import (
     TraceLink,
     canonical_json,
     content_hash,
+    kind_value,
+    trace_kind_value,
 )
 
 
@@ -29,16 +32,98 @@ def _slug(value: str) -> str:
     )
 
 
-class LifecycleEngine:
-    def __init__(self, model: ContinuityModel | None = None) -> None:
-        self.model = model or ContinuityModel()
+@dataclass(frozen=True)
+class LifecycleKinds:
+    """Configurable names for lifecycle artifact roles."""
 
-    def develop_intent(self, need: Artifact) -> Artifact:
-        if need.kind is not ArtifactKind.STAKEHOLDER_NEED:
-            raise TypeError("develop_intent requires a stakeholder_need")
+    stakeholder_need: ArtifactKind | str = ArtifactKind.STAKEHOLDER_NEED
+    requirement: ArtifactKind | str = ArtifactKind.REQUIREMENT
+    architectural_element: ArtifactKind | str = ArtifactKind.ARCHITECTURAL_ELEMENT
+    behavior_element: ArtifactKind | str = ArtifactKind.BEHAVIOR_ELEMENT
+    implementation: ArtifactKind | str = ArtifactKind.IMPLEMENTATION
+    component_test: ArtifactKind | str = ArtifactKind.COMPONENT_TEST
+    scenario_test: ArtifactKind | str = ArtifactKind.SCENARIO_TEST
+    verification_evidence: ArtifactKind | str = ArtifactKind.VERIFICATION_EVIDENCE
+
+
+class IdentityPolicy(Protocol):
+    def requirement_id(self, need: Artifact) -> str: ...
+
+    def architecture_id(self, requirement: Artifact, element_name: str) -> str: ...
+
+    def component_test_id(
+        self,
+        requirement: Artifact,
+        case: Mapping[str, object],
+        index: int,
+    ) -> str: ...
+
+    def scenario_test_id(
+        self,
+        requirement: Artifact,
+        scenario: Mapping[str, object],
+        index: int,
+    ) -> str: ...
+
+    def baseline_id(self, requirement: Artifact, digest: str) -> str: ...
+
+
+@dataclass(frozen=True)
+class DefaultIdentityPolicy:
+    """Stable, domain-neutral fallbacks. Callers may supply explicit IDs."""
+
+    def requirement_id(self, need: Artifact) -> str:
+        configured = need.properties.get("requirementId")
+        return str(configured) if configured else need.id
+
+    def architecture_id(self, requirement: Artifact, element_name: str) -> str:
+        return f"{requirement.id}/{_slug(element_name)}"
+
+    def component_test_id(
+        self,
+        requirement: Artifact,
+        case: Mapping[str, object],
+        index: int,
+    ) -> str:
+        return str(case.get("id", f"{requirement.id}/component-test-{index}"))
+
+    def scenario_test_id(
+        self,
+        requirement: Artifact,
+        scenario: Mapping[str, object],
+        index: int,
+    ) -> str:
+        return str(scenario.get("id", f"{requirement.id}/scenario-test-{index}"))
+
+    def baseline_id(self, requirement: Artifact, digest: str) -> str:
+        return f"BL-{digest[:16]}"
+
+
+class LifecycleEngine:
+    def __init__(
+        self,
+        model: ContinuityModel | None = None,
+        *,
+        identity_policy: IdentityPolicy | None = None,
+        kinds: LifecycleKinds | None = None,
+    ) -> None:
+        self.model = model or ContinuityModel()
+        self.identity_policy = identity_policy or DefaultIdentityPolicy()
+        self.kinds = kinds or LifecycleKinds()
+
+    def develop_intent(
+        self,
+        need: Artifact,
+        requirement_id: str | None = None,
+    ) -> Artifact:
+        if kind_value(need.kind) != kind_value(self.kinds.stakeholder_need):
+            raise TypeError("develop_intent requires the configured stakeholder need kind")
         need = self.model.add_artifact(need)
 
-        requirement_id = f"R-{need.id.removeprefix('N-')}"
+        requirement_id = (
+            requirement_id
+            or self.identity_policy.requirement_id(need)
+        )
         properties = {
             "statement": need.properties.get("statement", ""),
             "rationale": need.properties.get("rationale", ""),
@@ -58,7 +143,7 @@ class LifecycleEngine:
             supersedes = (existing.ref,) if existing is not None else ()
             requirement = Artifact(
                 id=requirement_id,
-                kind=ArtifactKind.REQUIREMENT,
+                kind=self.kinds.requirement,
                 revision=revision,
                 properties=properties,
                 supersedes=supersedes,
@@ -85,14 +170,19 @@ class LifecycleEngine:
         self,
         requirement: Artifact,
         element_names: Iterable[str],
+        element_ids: Mapping[str, str] | None = None,
     ) -> tuple[Artifact, ...]:
-        if requirement.kind is not ArtifactKind.REQUIREMENT:
-            raise TypeError("realize_architecture requires a requirement")
+        if kind_value(requirement.kind) != kind_value(self.kinds.requirement):
+            raise TypeError("realize_architecture requires the configured requirement kind")
 
         requirement = self.model.add_artifact(requirement)
         elements: list[Artifact] = []
+        element_ids = element_ids or {}
         for name in element_names:
-            element_id = f"A-{_slug(requirement.id)}-{_slug(name)}"
+            element_id = (
+                element_ids.get(name)
+                or self.identity_policy.architecture_id(requirement, name)
+            )
             properties = {
                 "name": name,
                 "requirement": requirement.ref,
@@ -109,7 +199,7 @@ class LifecycleEngine:
                 supersedes = (existing.ref,) if existing is not None else ()
                 element = Artifact(
                     id=element_id,
-                    kind=ArtifactKind.ARCHITECTURAL_ELEMENT,
+                    kind=self.kinds.architectural_element,
                     revision=revision,
                     properties=properties,
                     supersedes=supersedes,
@@ -140,6 +230,8 @@ class LifecycleEngine:
         behavior_id: str,
         properties: Mapping[str, object],
     ) -> Artifact:
+        if kind_value(requirement.kind) != kind_value(self.kinds.requirement):
+            raise TypeError("realize_behavior requires the configured requirement kind")
         requirement = self.model.add_artifact(requirement)
         architecture = tuple(self.model.add_artifact(element) for element in architecture)
 
@@ -157,7 +249,7 @@ class LifecycleEngine:
             supersedes = (existing.ref,) if existing is not None else ()
             behavior = Artifact(
                 id=behavior_id,
-                kind=ArtifactKind.BEHAVIOR_ELEMENT,
+                kind=self.kinds.behavior_element,
                 revision=revision,
                 properties=complete_properties,
                 supersedes=supersedes,
@@ -193,6 +285,10 @@ class LifecycleEngine:
         simulated_scenarios: Iterable[Mapping[str, object]],
         implementation: Artifact | None = None,
     ) -> tuple[Artifact, tuple[Artifact, ...], tuple[Artifact, ...]]:
+        if kind_value(requirement.kind) != kind_value(self.kinds.requirement):
+            raise TypeError("verify_satisfaction requires the configured requirement kind")
+        if kind_value(behavior.kind) != kind_value(self.kinds.behavior_element):
+            raise TypeError("verify_satisfaction requires the configured behavior kind")
         requirement = self.model.add_artifact(requirement)
         behavior = self.model.add_artifact(behavior)
         if implementation is not None:
@@ -200,7 +296,11 @@ class LifecycleEngine:
 
         component_artifacts: list[Artifact] = []
         for index, case in enumerate(component_cases, start=1):
-            case_id = str(case.get("id", f"TC-C-{index}"))
+            case_id = self.identity_policy.component_test_id(
+                requirement,
+                case,
+                index,
+            )
             properties = dict(case)
             properties["requirement"] = requirement.ref
             properties["behavior"] = behavior.ref
@@ -218,7 +318,7 @@ class LifecycleEngine:
                 supersedes = (existing.ref,) if existing is not None else ()
                 test = Artifact(
                     id=case_id,
-                    kind=ArtifactKind.COMPONENT_TEST,
+                    kind=self.kinds.component_test,
                     revision=revision,
                     properties=properties,
                     supersedes=supersedes,
@@ -255,7 +355,11 @@ class LifecycleEngine:
 
         scenario_artifacts: list[Artifact] = []
         for index, scenario in enumerate(simulated_scenarios, start=1):
-            scenario_id = str(scenario.get("id", f"TC-S-{index}"))
+            scenario_id = self.identity_policy.scenario_test_id(
+                requirement,
+                scenario,
+                index,
+            )
             properties = dict(scenario)
             properties["requirement"] = requirement.ref
             properties["behavior"] = behavior.ref
@@ -273,7 +377,7 @@ class LifecycleEngine:
                 supersedes = (existing.ref,) if existing is not None else ()
                 test = Artifact(
                     id=scenario_id,
-                    kind=ArtifactKind.SCENARIO_TEST,
+                    kind=self.kinds.scenario_test,
                     revision=revision,
                     properties=properties,
                     supersedes=supersedes,
@@ -330,7 +434,7 @@ class LifecycleEngine:
             supersedes = (existing.ref,) if existing is not None else ()
             evidence = Artifact(
                 id=evidence_id,
-                kind=ArtifactKind.VERIFICATION_EVIDENCE,
+                kind=self.kinds.verification_evidence,
                 revision=revision,
                 properties=evidence_properties,
                 supersedes=supersedes,
@@ -379,7 +483,9 @@ class LifecycleEngine:
             except KeyError:
                 continue
             impacted.append(artifact_ref)
-            if artifact.kind is ArtifactKind.VERIFICATION_EVIDENCE:
+            if kind_value(artifact.kind) == kind_value(
+                self.kinds.verification_evidence
+            ):
                 checked_requirement = artifact.properties.get("requirement")
                 if checked_requirement and checked_requirement != root.ref:
                     invalidated.append(artifact_ref)
@@ -407,7 +513,7 @@ class LifecycleEngine:
                     reason="different stable identities",
                 )
             )
-        elif left_artifact.kind is not right_artifact.kind:
+        elif kind_value(left_artifact.kind) != kind_value(right_artifact.kind):
             conflicts.append(
                 Conflict(
                     left=left_artifact.ref,
@@ -463,10 +569,7 @@ class LifecycleEngine:
                 "traces": [list(key) for key in active_links],
             }
         )
-        requirement_stem = requirement.id.removeprefix("R-")
-        baseline_id = (
-            f"BL-{requirement_stem}-{requirement.revision}-{digest[:8]}"
-        )
+        baseline_id = self.identity_policy.baseline_id(requirement, digest)
         baseline = Baseline(
             id=baseline_id,
             requirement_ref=requirement.ref,
@@ -484,7 +587,7 @@ class LifecycleEngine:
         architecture = [
             link.target_id
             for link in traces
-            if link.kind is TraceKind.REALIZES
+            if trace_kind_value(link.kind) == "realizes"
             and link.source_id == requirement.id
             and link.source_revision == requirement.revision
         ]
@@ -496,7 +599,7 @@ class LifecycleEngine:
         behavior_refs = [
             link.target_ref
             for link in traces
-            if link.kind is TraceKind.SUPPORTS
+            if trace_kind_value(link.kind) == "supports"
             and link.source_id in architecture
         ]
         if not behavior_refs:
@@ -507,14 +610,15 @@ class LifecycleEngine:
         component_tests = [
             link.source_id
             for link in traces
-            if link.kind is TraceKind.COVERS
+            if trace_kind_value(link.kind) == "covers"
             and link.target_id == requirement.id
             and link.target_revision == requirement.revision
         ]
         scenario_tests = [
             artifact.id
             for artifact in self.model.latest_artifacts()
-            if artifact.kind is ArtifactKind.SCENARIO_TEST
+            if kind_value(artifact.kind)
+            == kind_value(self.kinds.scenario_test)
             and artifact.properties.get("requirement") == requirement.ref
         ]
         if not component_tests:
@@ -529,7 +633,8 @@ class LifecycleEngine:
         passed_evidence = [
             artifact
             for artifact in self.model.latest_artifacts()
-            if artifact.kind is ArtifactKind.VERIFICATION_EVIDENCE
+            if kind_value(artifact.kind)
+            == kind_value(self.kinds.verification_evidence)
             and artifact.properties.get("requirement") == requirement.ref
             and artifact.properties.get("result") == "pass"
         ]

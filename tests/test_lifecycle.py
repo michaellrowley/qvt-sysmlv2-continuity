@@ -1,6 +1,6 @@
 import pytest
 
-from sysml_v2_qvt.lifecycle import LifecycleEngine
+from sysml_v2_qvt.lifecycle import LifecycleEngine, LifecycleKinds
 from sysml_v2_qvt.model import Artifact, ArtifactKind, TraceKind
 
 
@@ -15,7 +15,7 @@ def test_full_lifecycle_enforces_trace_contract():
             "acceptanceCriteria": ["Temperature in range."],
         },
     )
-    requirement = engine.develop_intent(need)
+    requirement = engine.develop_intent(need, "R-BATT")
     architecture = engine.realize_architecture(
         requirement,
         ["ThermalController", "TemperatureSensor", "Heater"],
@@ -90,7 +90,7 @@ def test_requirement_revision_propagates_and_invalidates_evidence():
             "acceptanceCriteria": ["In range."],
         },
     )
-    old_requirement = engine.develop_intent(old_need)
+    old_requirement = engine.develop_intent(old_need, "R-BATT")
     old_architecture = engine.realize_architecture(
         old_requirement,
         ["ThermalController", "Heater"],
@@ -121,7 +121,7 @@ def test_requirement_revision_propagates_and_invalidates_evidence():
             "acceptanceCriteria": ["Updated range."],
         },
     )
-    new_requirement = engine.develop_intent(changed_need)
+    new_requirement = engine.develop_intent(changed_need, "R-BATT")
     new_architecture = engine.realize_architecture(
         new_requirement,
         ["ThermalController", "Heater"],
@@ -171,9 +171,96 @@ def test_baseline_is_repeatable():
             properties={"statement": "Test baseline."},
         )
     )
-    requirement = engine.develop_intent(need)
+    requirement = engine.develop_intent(need, "R-X")
     first = engine.baseline_thread(requirement)
     second = engine.baseline_thread(requirement)
 
     assert first.id == second.id
     assert first.content_hash == second.content_hash
+
+
+def test_lifecycle_accepts_custom_domain_artifact_kinds():
+    engine = LifecycleEngine(
+        kinds=LifecycleKinds(
+            stakeholder_need="goal",
+            requirement="outcome",
+            architectural_element="solution",
+            behavior_element="workflow",
+            implementation="code_artifact",
+            component_test="unit_check",
+            scenario_test="scenario_check",
+            verification_evidence="proof",
+        )
+    )
+
+    goal = engine.model.add_artifact(
+        Artifact(
+            id="GOAL-1",
+            kind="goal",
+            properties={
+                "statement": "Complete the operation.",
+                "rationale": "Operational need.",
+                "acceptanceCriteria": ["The operation completes."],
+            },
+        )
+    )
+    outcome = engine.develop_intent(goal, "OUTCOME-1")
+    solution = engine.realize_architecture(outcome, ["Coordinator"])
+    workflow = engine.realize_behavior(
+        outcome,
+        solution,
+        "WORKFLOW-1",
+        {"steps": ["prepare", "execute"]},
+    )
+    evidence, component_tests, scenario_tests = engine.verify_satisfaction(
+        outcome,
+        workflow,
+        evidence_id="PROOF-1",
+        result="pass",
+        summary="Checks passed.",
+        component_cases=[{"id": "UNIT-1", "result": "pass"}],
+        simulated_scenarios=[{"id": "SCENARIO-1", "result": "pass"}],
+    )
+
+    assert outcome.kind == "outcome"
+    assert solution[0].kind == "solution"
+    assert workflow.kind == "workflow"
+    assert component_tests[0].kind == "unit_check"
+    assert scenario_tests[0].kind == "scenario_check"
+    assert evidence.kind == "proof"
+    assert engine.check_continuity(outcome) == ()
+
+
+def test_lifecycle_accepts_custom_identity_policy():
+    class NamespacedIdentityPolicy:
+        def requirement_id(self, need):
+            return f"OUTCOME/{need.id}"
+
+        def architecture_id(self, requirement, element_name):
+            return f"SOLUTION/{requirement.id}/{element_name}"
+
+        def component_test_id(self, requirement, case, index):
+            return str(case.get("id", f"{requirement.id}/UNIT/{index}"))
+
+        def scenario_test_id(self, requirement, scenario, index):
+            return str(scenario.get("id", f"{requirement.id}/SCENARIO/{index}"))
+
+        def baseline_id(self, requirement, digest):
+            return f"SNAPSHOT-{digest[:12]}"
+
+    engine = LifecycleEngine(identity_policy=NamespacedIdentityPolicy())
+    need = engine.model.add_artifact(
+        Artifact(
+            id="GOAL-7",
+            kind=ArtifactKind.STAKEHOLDER_NEED,
+            properties={"statement": "Operate safely."},
+        )
+    )
+
+    outcome = engine.develop_intent(need)
+    architecture = engine.realize_architecture(outcome, ["SafetyCore"])
+    baseline = engine.baseline_thread(outcome)
+
+    assert outcome.id == "OUTCOME/GOAL-7"
+    assert architecture[0].id == "SOLUTION/OUTCOME/GOAL-7/SafetyCore"
+    assert baseline.id.startswith("SNAPSHOT-")

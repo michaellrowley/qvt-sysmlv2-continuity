@@ -33,3 +33,7 @@ explicit:
 Stable identity, revision, and `properties` fields are part of the adapter
 contract. These sources are reference implementations, not a claim that the
 types are literal SysML v2 metaclass names.
+
+The example mappings use explicit source/target identities and properties rather
+than domain-specific ID prefixes. Domains can provide their own identity
+fields, artifact-role names, and code-generation adapters.

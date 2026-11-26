@@ -1,6 +1,7 @@
 {
   "need": {
     "id": "N-BATT-THERMAL",
+    "requirementId": "R-BATT-THERMAL",
     "statement": "Keep the battery within 20 to 30 degrees Celsius during normal operation and force safe-off after a temperature-sensor fault.",
     "rationale": "Protect battery lifetime and prevent unsafe heater operation.",
     "acceptanceCriteria": [

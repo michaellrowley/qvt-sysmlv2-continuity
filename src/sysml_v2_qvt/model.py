@@ -40,10 +40,18 @@ class TraceKind(str, Enum):
     SUPERSEDES = "supersedes"
 
 
+def kind_value(kind: ArtifactKind | str) -> str:
+    return kind.value if isinstance(kind, ArtifactKind) else str(kind)
+
+
+def trace_kind_value(kind: TraceKind | str) -> str:
+    return kind.value if isinstance(kind, TraceKind) else str(kind)
+
+
 @dataclass(frozen=True)
 class Artifact:
     id: str
-    kind: ArtifactKind
+    kind: ArtifactKind | str
     revision: int = 1
     properties: dict[str, Any] = field(default_factory=dict)
     supersedes: tuple[str, ...] = ()
@@ -54,7 +62,7 @@ class Artifact:
             digest = content_hash(
                 {
                     "id": self.id,
-                    "kind": self.kind.value,
+                    "kind": kind_value(self.kind),
                     "revision": self.revision,
                     "properties": self.properties,
                     "supersedes": list(self.supersedes),
@@ -69,7 +77,7 @@ class Artifact:
     def to_dict(self) -> dict[str, Any]:
         return {
             "id": self.id,
-            "kind": self.kind.value,
+            "kind": kind_value(self.kind),
             "revision": self.revision,
             "ref": self.ref,
             "properties": self.properties,
@@ -80,7 +88,7 @@ class Artifact:
 
 @dataclass(frozen=True)
 class TraceLink:
-    kind: TraceKind
+    kind: TraceKind | str
     source_id: str
     source_revision: int
     target_id: str
@@ -99,7 +107,7 @@ class TraceLink:
     @property
     def key(self) -> tuple[Any, ...]:
         return (
-            self.kind.value,
+            trace_kind_value(self.kind),
             self.source_id,
             self.source_revision,
             self.target_id,
@@ -108,7 +116,7 @@ class TraceLink:
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "kind": self.kind.value,
+            "kind": trace_kind_value(self.kind),
             "source": self.source_ref,
             "target": self.target_ref,
             "status": self.status,
@@ -213,7 +221,7 @@ class ContinuityModel:
 
     def ensure_trace(
         self,
-        kind: TraceKind,
+        kind: TraceKind | str,
         source: Artifact,
         target: Artifact,
         derived_by: str,

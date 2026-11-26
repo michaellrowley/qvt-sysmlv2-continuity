@@ -11,9 +11,15 @@ contracts:
 - `reconcile_views`
 - `baseline_thread`
 
-Deterministic code generation is demonstrated as an adapter, not as another
-QVT lifecycle operation. Component tests and simulated scenarios are both
-created by `verify_satisfaction`.
+The lifecycle engine, model, trace, and verification APIs are domain-neutral.
+The battery thermal-control program is only a demonstration adapter. Deterministic
+code generation is a caller-supplied source renderer, not a battery-specific
+operation or an additional QVT lifecycle operation.
+
+Use `LifecycleKinds` to name artifact roles for another domain or meta-model.
+Use `IdentityPolicy`/`DefaultIdentityPolicy` to control stable IDs for needs,
+requirements, architecture elements, tests, and baselines. Domain values belong
+in artifact properties and supplied data, not in the lifecycle engine.
 
 ## Repository layout
 
@@ -25,8 +31,8 @@ qvt/
 src/sysml_v2_qvt/
   model.py                       Revisions, traces, baselines, impacts
   lifecycle.py                   Reference operation implementation
-  codegen.py                     Deterministic behavior-to-code adapter
-  example.py                     Battery thermal-control flow
+  codegen.py                     Generic behavior-to-source adapter
+  example.py                     Battery thermal-control example adapter
   cli.py                         Command-line entry point
 examples/
   battery_thermal.json           Complete example data
@@ -73,6 +79,32 @@ not a useful user-facing lifecycle language for this repository.
 The QVT sources reference a small adapter metamodel. They demonstrate the
 contract and mapping shape; the Python implementation is the executable
 reference runtime until a SysML v2 MOF adapter is connected.
+
+## Generic lifecycle configuration
+
+```python
+from sysml_v2_qvt import Artifact, ArtifactKind, LifecycleEngine, LifecycleKinds
+
+kinds = LifecycleKinds(
+    stakeholder_need="goal",
+    requirement="outcome",
+    architectural_element="solution",
+    behavior_element="workflow",
+    verification_evidence="proof",
+)
+engine = LifecycleEngine(kinds=kinds)
+
+goal = Artifact(
+    id="GOAL-1",
+    kind="goal",
+    properties={"statement": "Complete the operation."},
+)
+outcome = engine.develop_intent(goal, "OUTCOME-1")
+```
+
+`generate_implementation()` accepts the source text or a renderer callback,
+plus language and entry-point metadata. It never interprets domain properties:
+that belongs to the selected renderer.
 
 ## Battery example
 

@@ -6,7 +6,11 @@ import argparse
 import json
 from pathlib import Path
 
-from .example import load_battery_example, run_battery_example
+from .example import (
+    generate_battery_controller_source,
+    load_battery_example,
+    run_battery_example,
+)
 from .model import Artifact, ArtifactKind
 
 
@@ -50,10 +54,15 @@ def main(argv: list[str] | None = None) -> int:
         baseline_result = run_battery_example(example_data, engine.model)
 
         changed_need = Artifact(
-            id="N-BATT-THERMAL",
+            id=example_data["need"]["id"],
             kind=ArtifactKind.STAKEHOLDER_NEED,
             revision=2,
             properties={
+                **(
+                    {"requirementId": example_data["need"]["requirementId"]}
+                    if "requirementId" in example_data["need"]
+                    else {}
+                ),
                 "statement": (
                     "Keep the battery within 18 to 32 degrees Celsius during "
                     "normal operation and force safe-off after a sensor fault."
@@ -66,10 +75,14 @@ def main(argv: list[str] | None = None) -> int:
             },
         )
         engine.model.add_artifact(changed_need)
-        revised_requirement = engine.develop_intent(changed_need)
+        revised_requirement = engine.develop_intent(
+            changed_need,
+            example_data["need"].get("requirementId"),
+        )
         revised_architecture = engine.realize_architecture(
             revised_requirement,
             example_data["architecture"],
+            example_data.get("architectureIds"),
         )
         revised_behavior = engine.realize_behavior(
             revised_requirement,
@@ -85,6 +98,9 @@ def main(argv: list[str] | None = None) -> int:
             engine.model,
             revised_behavior,
             example_data["implementation"]["id"],
+            generate_battery_controller_source,
+            language="Python",
+            entry_point="generate_heater_command",
         )
 
         plan = engine.propagate_change(revised_requirement)
@@ -102,3 +118,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

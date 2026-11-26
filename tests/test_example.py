@@ -1,4 +1,25 @@
-from sysml_v2_qvt.example import run_battery_example
+from pathlib import Path
+
+from sysml_v2_qvt.example import (
+    generate_battery_controller_source,
+    run_battery_example,
+)
+from sysml_v2_qvt.model import Artifact, ArtifactKind
+
+
+def test_battery_controller_adapter_matches_example_source():
+    behavior = Artifact(
+        id="B-BATT",
+        kind=ArtifactKind.BEHAVIOR_ELEMENT,
+        properties={"heatBelowC": 24.0, "offAboveC": 26.0},
+    )
+
+    source = generate_battery_controller_source(behavior)
+    example_path = Path(__file__).parents[1] / "examples" / "battery_thermal_controller.py"
+
+    assert "HEAT_BELOW_C = 24.0" in source
+    assert "OFF_ABOVE_C = 26.0" in source
+    assert source.strip() == example_path.read_text(encoding="utf-8").strip()
 
 
 def test_battery_example_is_complete_and_passes():
@@ -11,7 +32,7 @@ def test_battery_example_is_complete_and_passes():
     assert len(result["architecture"]) == 4
     assert len(result["componentTests"]) == 4
     assert len(result["scenarioTests"]) == 3
-    assert "BL-BATT-THERMAL-1-" in result["baseline"]["id"]
+    assert result["baseline"]["id"].startswith("BL-")
 
 
 def test_custom_example_json_flow(tmp_path):

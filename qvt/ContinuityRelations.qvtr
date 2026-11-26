@@ -10,7 +10,8 @@ transformation SysMLContinuity(
     };
     domain sysml requirement : Requirement {
       id = requirementId,
-      revision = requirementRevision
+      revision = requirementRevision,
+      sourceNeedId = needId
     };
     enforce domain continuity origin : TraceLink {
       kind = 'origin',
@@ -22,8 +23,7 @@ transformation SysMLContinuity(
     };
 
     where {
-      requirementId = 'R-' + needId.substring(2);
-      requirementRevision >= needRevision;
+      requirement.sourceNeedId = needId;
     }
   }
 

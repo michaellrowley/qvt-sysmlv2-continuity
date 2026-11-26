@@ -63,7 +63,10 @@ operation supersede(
 
 operation developIntent(need : StakeholderNeed) : Requirement
 {
-  var requirementId : String := 'R-' + need.id.substring(2);
+  var requirementId : String := need.requirementId;
+  if requirementId = null then {
+    requirementId := need.id;
+  } endif;
   var existing : Requirement :=
     sysml.objects()[Requirement]->select(r |
       r.id = requirementId
@@ -103,7 +106,7 @@ operation realizeArchitecture(
   var elements : Sequence(ArchitecturalElement);
   elementNames->forEach(name) {
     var elementId : String :=
-      'A-' + requirement.id + '-' + name.toLower();
+      requirement.id + '-' + name.toLower();
     var existing : ArchitecturalElement :=
       sysml.objects()[ArchitecturalElement]->select(a |
         a.id = elementId
