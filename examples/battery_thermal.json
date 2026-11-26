@@ -19,10 +19,178 @@
   "behavior": {
     "id": "B-BATT-THERMAL-CONTROL",
     "kind": "state_machine",
+    "entryPoint": "generate_heater_command",
+    "initialState": "HOLD",
     "states": ["HEAT", "HOLD", "SAFE_OFF"],
     "heatBelowC": 24.0,
     "offAboveC": 26.0,
-    "safeOffOnSensorFault": true
+    "safeOffOnSensorFault": true,
+    "parameters": [
+      {
+        "name": "temperatureC",
+        "typeName": "float",
+        "direction": "in",
+        "required": true
+      },
+      {
+        "name": "sensorValid",
+        "typeName": "bool",
+        "direction": "in",
+        "default": true
+      },
+      {
+        "name": "currentState",
+        "typeName": "str",
+        "direction": "in",
+        "default": "HOLD"
+      }
+    ],
+    "variables": [
+      {
+        "name": "heaterCommand",
+        "typeName": "str",
+        "initialValue": "HOLD",
+        "mutable": true
+      }
+    ],
+    "results": [
+      {
+        "name": "heaterCommand",
+        "typeName": "str",
+        "direction": "out"
+      }
+    ],
+    "operations": [
+      {
+        "id": "OP-GENERATE-HEATER-COMMAND",
+        "name": "generate_heater_command",
+        "kind": "function",
+        "parameters": [
+          {
+            "name": "temperatureC",
+            "typeName": "float",
+            "direction": "in"
+          },
+          {
+            "name": "sensorValid",
+            "typeName": "bool",
+            "direction": "in",
+            "default": true
+          }
+        ],
+        "results": [
+          {
+            "name": "heaterCommand",
+            "typeName": "str",
+            "direction": "out"
+          }
+        ],
+        "asynchronous": false
+      }
+    ],
+    "functionCalls": [
+      {
+        "id": "CALL-GENERATE-HEATER-COMMAND",
+        "functionName": "generate_heater_command",
+        "target": "ThermalController",
+        "synchronous": true,
+        "timeoutMs": 10,
+        "arguments": [
+          {
+            "name": "temperatureC",
+            "expression": "sensorTemperatureC"
+          },
+          {
+            "name": "sensorValid",
+            "expression": "sensorValid"
+          },
+          {
+            "name": "currentState",
+            "expression": "heaterState"
+          }
+        ],
+        "returnBinding": "heaterCommand"
+      }
+    ],
+    "communications": [
+      {
+        "id": "COMM-TEMPERATURE-SENSOR",
+        "kind": "subscription",
+        "direction": "in",
+        "channel": "battery.temperature",
+        "protocol": "CAN",
+        "payloadType": "TemperatureReading",
+        "qos": {
+          "periodMs": 100,
+          "reliability": "best_effort"
+        },
+        "timeoutMs": 50,
+        "reliable": true
+      },
+      {
+        "id": "COMM-HEATER-COMMAND",
+        "kind": "command",
+        "direction": "out",
+        "channel": "heater.command",
+        "protocol": "CAN",
+        "payloadType": "HeaterCommand",
+        "qos": {
+          "priority": 7,
+          "reliability": "eventual"
+        },
+        "timeoutMs": 10,
+        "reliable": true
+      }
+    ],
+    "schedules": [
+      {
+        "id": "SCH-THERMAL-CONTROL",
+        "kind": "cyclic",
+        "periodMs": 100,
+        "startOffsetMs": 0,
+        "deadlineMs": 100,
+        "wcetMs": 5,
+        "priority": 50,
+        "jitterMs": 1,
+        "entryPoint": "generate_heater_command"
+      }
+    ],
+    "transitions": [
+      {
+        "id": "TRANS-SENSOR-FAULT",
+        "source": "HOLD",
+        "target": "SAFE_OFF",
+        "trigger": "SensorFault",
+        "guard": "not sensorValid",
+        "actions": [
+          {
+            "kind": "send",
+            "target": "heater.command",
+            "arguments": [
+              {
+                "name": "command",
+                "value": "SAFE_OFF"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "TRANS-LOW-TEMPERATURE",
+        "source": "HOLD",
+        "target": "HEAT",
+        "trigger": "TemperatureSample",
+        "guard": "temperatureC < heatBelowC",
+        "actions": [
+          {
+            "kind": "call",
+            "target": "generate_heater_command",
+            "returnBinding": "heaterCommand"
+          }
+        ]
+      }
+    ],
+    "concurrency": "cyclic"
   },
   "implementation": {
     "id": "C-BATT-THERMAL-CONTROL"
@@ -94,5 +262,13 @@
   ],
   "evidence": {
     "id": "E-BATT-THERMAL"
+  },
+  "change": {
+    "statement": "Keep the battery within 18 to 32 degrees Celsius during normal operation and force safe-off after a sensor fault.",
+    "rationale": "Updated operating-temperature envelope.",
+    "acceptanceCriteria": [
+      "Normal-operation temperature remains between 18C and 32C.",
+      "A sensor fault produces SAFE_OFF."
+    ]
   }
 }

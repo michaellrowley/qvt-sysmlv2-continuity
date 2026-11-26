@@ -8,10 +8,17 @@ from typing import Iterable, Mapping, Protocol
 from .model import (
     Artifact,
     ArtifactKind,
+    AllocationSpec,
     Baseline,
+    BehaviorModel,
     Conflict,
     ContinuityModel,
+    DeploymentSpec,
     ImpactPlan,
+    InterfaceSpec,
+    OperationSpec,
+    ParameterSpec,
+    PortSpec,
     Reconciliation,
     TraceKind,
     TraceLink,
@@ -39,17 +46,33 @@ class LifecycleKinds:
     stakeholder_need: ArtifactKind | str = ArtifactKind.STAKEHOLDER_NEED
     requirement: ArtifactKind | str = ArtifactKind.REQUIREMENT
     architectural_element: ArtifactKind | str = ArtifactKind.ARCHITECTURAL_ELEMENT
+    interface: ArtifactKind | str = ArtifactKind.INTERFACE
+    port: ArtifactKind | str = ArtifactKind.PORT
+    connection: ArtifactKind | str = ArtifactKind.CONNECTION
     behavior_element: ArtifactKind | str = ArtifactKind.BEHAVIOR_ELEMENT
     implementation: ArtifactKind | str = ArtifactKind.IMPLEMENTATION
+    allocation: ArtifactKind | str = ArtifactKind.ALLOCATION
+    deployment: ArtifactKind | str = ArtifactKind.DEPLOYMENT
     component_test: ArtifactKind | str = ArtifactKind.COMPONENT_TEST
     scenario_test: ArtifactKind | str = ArtifactKind.SCENARIO_TEST
     verification_evidence: ArtifactKind | str = ArtifactKind.VERIFICATION_EVIDENCE
+    verification_plan: ArtifactKind | str = ArtifactKind.VERIFICATION_PLAN
 
 
 class IdentityPolicy(Protocol):
     def requirement_id(self, need: Artifact) -> str: ...
 
     def architecture_id(self, requirement: Artifact, element_name: str) -> str: ...
+
+    def interface_id(self, requirement: Artifact, name: str) -> str: ...
+
+    def port_id(self, interface: Artifact, name: str) -> str: ...
+
+    def allocation_id(self, source: Artifact, target: Artifact) -> str: ...
+
+    def deployment_id(self, component: Artifact, target: Artifact) -> str: ...
+
+    def verification_plan_id(self, requirement: Artifact, behavior: Artifact) -> str: ...
 
     def component_test_id(
         self,
@@ -78,6 +101,21 @@ class DefaultIdentityPolicy:
 
     def architecture_id(self, requirement: Artifact, element_name: str) -> str:
         return f"{requirement.id}/{_slug(element_name)}"
+
+    def interface_id(self, requirement: Artifact, name: str) -> str:
+        return f"{requirement.id}/interface/{_slug(name)}"
+
+    def port_id(self, interface: Artifact, name: str) -> str:
+        return f"{interface.id}/port/{_slug(name)}"
+
+    def allocation_id(self, source: Artifact, target: Artifact) -> str:
+        return f"{source.id}/allocated-to/{target.id}"
+
+    def deployment_id(self, component: Artifact, target: Artifact) -> str:
+        return f"{component.id}/deployed-to/{target.id}"
+
+    def verification_plan_id(self, requirement: Artifact, behavior: Artifact) -> str:
+        return f"{requirement.id}/{behavior.id}/verification-plan"
 
     def component_test_id(
         self,
@@ -169,7 +207,7 @@ class LifecycleEngine:
     def realize_architecture(
         self,
         requirement: Artifact,
-        element_names: Iterable[str],
+        element_names: Iterable[str | Mapping[str, object]],
         element_ids: Mapping[str, str] | None = None,
     ) -> tuple[Artifact, ...]:
         if kind_value(requirement.kind) != kind_value(self.kinds.requirement):
@@ -178,14 +216,45 @@ class LifecycleEngine:
         requirement = self.model.add_artifact(requirement)
         elements: list[Artifact] = []
         element_ids = element_ids or {}
-        for name in element_names:
+        for element_spec in element_names:
+            spec_properties: dict[str, object] = {}
+            if isinstance(element_spec, Mapping):
+                nested_properties = element_spec.get("properties", {})
+                spec_properties = (
+                    dict(nested_properties)
+                    if isinstance(nested_properties, Mapping)
+                    else {}
+                )
+                spec_properties.update(
+                    {
+                        key: value
+                        for key, value in element_spec.items()
+                        if key not in {"id", "elementId", "name", "properties"}
+                    }
+                )
+                name = str(
+                    element_spec.get(
+                        "name",
+                        element_spec.get("id", element_spec.get("elementId", "")),
+                    )
+                )
+            else:
+                name = element_spec
             element_id = (
-                element_ids.get(name)
+                (
+                    str(element_spec["id"])
+                    if isinstance(element_spec, Mapping) and "id" in element_spec
+                    else str(element_spec["elementId"])
+                    if isinstance(element_spec, Mapping) and "elementId" in element_spec
+                    else None
+                )
+                or element_ids.get(name)
                 or self.identity_policy.architecture_id(requirement, name)
             )
             properties = {
                 "name": name,
                 "requirement": requirement.ref,
+                **spec_properties,
             }
             try:
                 existing = self.model.latest(element_id)
@@ -228,14 +297,18 @@ class LifecycleEngine:
         requirement: Artifact,
         architecture: Iterable[Artifact],
         behavior_id: str,
-        properties: Mapping[str, object],
+        properties: Mapping[str, object] | BehaviorModel,
     ) -> Artifact:
         if kind_value(requirement.kind) != kind_value(self.kinds.requirement):
             raise TypeError("realize_behavior requires the configured requirement kind")
         requirement = self.model.add_artifact(requirement)
         architecture = tuple(self.model.add_artifact(element) for element in architecture)
 
-        complete_properties = dict(properties)
+        complete_properties = (
+            properties.to_properties()
+            if isinstance(properties, BehaviorModel)
+            else dict(properties)
+        )
         complete_properties["requirement"] = requirement.ref
         try:
             existing = self.model.latest(behavior_id)
@@ -273,6 +346,413 @@ class LifecycleEngine:
             )
         return behavior
 
+    def realize_interface(
+        self,
+        requirement: Artifact,
+        architecture: Artifact,
+        interface_id: str,
+        interface: InterfaceSpec | Mapping[str, object] | str,
+        *,
+        properties: Mapping[str, object] | None = None,
+    ) -> Artifact:
+        if kind_value(requirement.kind) != kind_value(self.kinds.requirement):
+            raise TypeError("realize_interface requires the configured requirement kind")
+        requirement = self.model.add_artifact(requirement)
+        architecture = self.model.add_artifact(architecture)
+        if isinstance(interface, InterfaceSpec):
+            spec = interface
+        elif isinstance(interface, Mapping):
+            spec = InterfaceSpec.from_dict(interface)
+        else:
+            spec = InterfaceSpec(id=interface_id, name=interface)
+
+        complete_properties = spec.to_dict()
+        complete_properties.update(properties or {})
+        complete_properties["requirement"] = requirement.ref
+        complete_properties["architecture"] = architecture.ref
+
+        try:
+            existing = self.model.latest(interface_id)
+        except KeyError:
+            existing = None
+        if existing is not None and existing.properties == complete_properties:
+            interface_artifact = existing
+        else:
+            revision = existing.revision + 1 if existing is not None else 1
+            supersedes = (existing.ref,) if existing is not None else ()
+            interface_artifact = Artifact(
+                id=interface_id,
+                kind=self.kinds.interface,
+                revision=revision,
+                properties=complete_properties,
+                supersedes=supersedes,
+            )
+            interface_artifact = self.model.add_artifact(interface_artifact)
+            if existing is not None:
+                self.model.ensure_trace(
+                    TraceKind.SUPERSEDES,
+                    existing,
+                    interface_artifact,
+                    "realize_interface",
+                )
+
+        self.model.ensure_trace(
+            TraceKind.REALIZES,
+            requirement,
+            interface_artifact,
+            "realize_interface",
+        )
+        self.model.ensure_trace(
+            TraceKind.EXPOSES,
+            architecture,
+            interface_artifact,
+            "realize_interface",
+        )
+        for port in spec.ports:
+            policy_port_id = getattr(
+                self.identity_policy,
+                "port_id",
+                lambda interface, name: f"{interface.id}/port/{_slug(name)}",
+            )
+            resolved_port_id = port.id or policy_port_id(interface_artifact, port.name)
+            port_artifact = self.realize_port(
+                interface_artifact,
+                port,
+                port_id=resolved_port_id,
+            )
+            self.model.ensure_trace(
+                TraceKind.EXPOSES,
+                interface_artifact,
+                port_artifact,
+                "realize_interface",
+            )
+        return interface_artifact
+
+    def realize_port(
+        self,
+        interface: Artifact,
+        port: PortSpec | Mapping[str, object] | str,
+        *,
+        port_id: str | None = None,
+    ) -> Artifact:
+        interface = self.model.add_artifact(interface)
+        if isinstance(port, PortSpec):
+            spec = port
+        elif isinstance(port, Mapping):
+            spec = PortSpec.from_dict(port)
+        else:
+            spec = PortSpec(id=port_id or port, name=port)
+
+        resolved_id = port_id or spec.id or spec.name
+        complete_properties = spec.to_dict()
+        complete_properties["interface"] = interface.ref
+
+        try:
+            existing = self.model.latest(resolved_id)
+        except KeyError:
+            existing = None
+        if existing is not None and existing.properties == complete_properties:
+            port_artifact = existing
+        else:
+            revision = existing.revision + 1 if existing is not None else 1
+            supersedes = (existing.ref,) if existing is not None else ()
+            port_artifact = Artifact(
+                id=resolved_id,
+                kind=self.kinds.port,
+                revision=revision,
+                properties=complete_properties,
+                supersedes=supersedes,
+            )
+            port_artifact = self.model.add_artifact(port_artifact)
+            if existing is not None:
+                self.model.ensure_trace(
+                    TraceKind.SUPERSEDES,
+                    existing,
+                    port_artifact,
+                    "realize_port",
+                )
+
+        self.model.ensure_trace(
+            TraceKind.EXPOSES,
+            interface,
+            port_artifact,
+            "realize_port",
+        )
+        return port_artifact
+
+    def connect_ports(
+        self,
+        source_port: Artifact,
+        target_port: Artifact,
+        *,
+        connection_id: str,
+        properties: Mapping[str, object] | None = None,
+    ) -> Artifact:
+        source_port = self.model.add_artifact(source_port)
+        target_port = self.model.add_artifact(target_port)
+        complete_properties = {
+            "source": source_port.ref,
+            "target": target_port.ref,
+            **dict(properties or {}),
+        }
+        try:
+            existing = self.model.latest(connection_id)
+        except KeyError:
+            existing = None
+        if existing is not None and existing.properties == complete_properties:
+            connection = existing
+        else:
+            revision = existing.revision + 1 if existing is not None else 1
+            supersedes = (existing.ref,) if existing is not None else ()
+            connection = Artifact(
+                id=connection_id,
+                kind=self.kinds.connection,
+                revision=revision,
+                properties=complete_properties,
+                supersedes=supersedes,
+            )
+            connection = self.model.add_artifact(connection)
+            if existing is not None:
+                self.model.ensure_trace(
+                    TraceKind.SUPERSEDES,
+                    existing,
+                    connection,
+                    "connect_ports",
+                )
+        self.model.ensure_trace(
+            TraceKind.CONNECTS,
+            source_port,
+            connection,
+            "connect_ports",
+        )
+        self.model.ensure_trace(
+            TraceKind.CONNECTS,
+            connection,
+            target_port,
+            "connect_ports",
+        )
+        return connection
+
+    def allocate_behavior(
+        self,
+        behavior: Artifact,
+        target: Artifact,
+        *,
+        allocation_id: str | None = None,
+        allocation: AllocationSpec | Mapping[str, object] | None = None,
+        properties: Mapping[str, object] | None = None,
+    ) -> Artifact:
+        behavior = self.model.add_artifact(behavior)
+        target = self.model.add_artifact(target)
+        resolved_id = allocation_id
+        if resolved_id is None:
+            policy = getattr(
+                self.identity_policy,
+                "allocation_id",
+                lambda source, target: f"{source.id}/allocated-to/{target.id}",
+            )
+            resolved_id = policy(behavior, target)
+        if isinstance(allocation, AllocationSpec):
+            spec = allocation
+        elif isinstance(allocation, Mapping):
+            spec = AllocationSpec.from_dict(allocation)
+        else:
+            spec = AllocationSpec(
+                id=resolved_id,
+                source_ref=behavior.ref,
+                target_ref=target.ref,
+            )
+        complete_properties = spec.to_dict()
+        complete_properties["sourceRef"] = behavior.ref
+        complete_properties["targetRef"] = target.ref
+        if properties:
+            existing_properties = dict(complete_properties.get("properties", {}))
+            existing_properties.update(dict(properties))
+            complete_properties["properties"] = existing_properties
+
+        try:
+            existing = self.model.latest(resolved_id)
+        except KeyError:
+            existing = None
+        if existing is not None and existing.properties == complete_properties:
+            allocation_artifact = existing
+        else:
+            revision = existing.revision + 1 if existing is not None else 1
+            supersedes = (existing.ref,) if existing is not None else ()
+            allocation_artifact = Artifact(
+                id=resolved_id,
+                kind=self.kinds.allocation,
+                revision=revision,
+                properties=complete_properties,
+                supersedes=supersedes,
+            )
+            allocation_artifact = self.model.add_artifact(allocation_artifact)
+            if existing is not None:
+                self.model.ensure_trace(
+                    TraceKind.SUPERSEDES,
+                    existing,
+                    allocation_artifact,
+                    "allocate_behavior",
+                )
+        self.model.ensure_trace(
+            TraceKind.ALLOCATES,
+            behavior,
+            target,
+            "allocate_behavior",
+        )
+        self.model.ensure_trace(
+            TraceKind.ALLOCATES,
+            allocation_artifact,
+            target,
+            "allocate_behavior",
+        )
+        return allocation_artifact
+
+    def deploy_component(
+        self,
+        component: Artifact,
+        target: Artifact,
+        *,
+        deployment_id: str | None = None,
+        deployment: DeploymentSpec | Mapping[str, object] | None = None,
+    ) -> Artifact:
+        component = self.model.add_artifact(component)
+        target = self.model.add_artifact(target)
+        resolved_id = deployment_id
+        if resolved_id is None:
+            policy = getattr(
+                self.identity_policy,
+                "deployment_id",
+                lambda source, target: f"{source.id}/deployed-to/{target.id}",
+            )
+            resolved_id = policy(component, target)
+        if isinstance(deployment, DeploymentSpec):
+            spec = deployment
+        elif isinstance(deployment, Mapping):
+            spec = DeploymentSpec.from_dict(deployment)
+        else:
+            spec = DeploymentSpec(
+                id=resolved_id,
+                component_ref=component.ref,
+                target_ref=target.ref,
+            )
+        complete_properties = spec.to_dict()
+        complete_properties["componentRef"] = component.ref
+        complete_properties["targetRef"] = target.ref
+
+        try:
+            existing = self.model.latest(resolved_id)
+        except KeyError:
+            existing = None
+        if existing is not None and existing.properties == complete_properties:
+            deployment_artifact = existing
+        else:
+            revision = existing.revision + 1 if existing is not None else 1
+            supersedes = (existing.ref,) if existing is not None else ()
+            deployment_artifact = Artifact(
+                id=resolved_id,
+                kind=self.kinds.deployment,
+                revision=revision,
+                properties=complete_properties,
+                supersedes=supersedes,
+            )
+            deployment_artifact = self.model.add_artifact(deployment_artifact)
+            if existing is not None:
+                self.model.ensure_trace(
+                    TraceKind.SUPERSEDES,
+                    existing,
+                    deployment_artifact,
+                    "deploy_component",
+                )
+        self.model.ensure_trace(
+            TraceKind.DEPLOYED_TO,
+            component,
+            target,
+            "deploy_component",
+        )
+        self.model.ensure_trace(
+            TraceKind.DEPLOYED_TO,
+            deployment_artifact,
+            target,
+            "deploy_component",
+        )
+        return deployment_artifact
+
+    def plan_verification(
+        self,
+        requirement: Artifact,
+        behavior: Artifact,
+        *,
+        implementation: Artifact | None = None,
+        plan_id: str | None = None,
+        strategy: str = "",
+        test_levels: Iterable[str] = (),
+        environments: Iterable[str] = (),
+        properties: Mapping[str, object] | None = None,
+    ) -> Artifact:
+        requirement = self.model.add_artifact(requirement)
+        behavior = self.model.add_artifact(behavior)
+        if implementation is not None:
+            implementation = self.model.add_artifact(implementation)
+        resolved_id = plan_id
+        if resolved_id is None:
+            policy = getattr(
+                self.identity_policy,
+                "verification_plan_id",
+                lambda requirement, behavior: (
+                    f"{requirement.id}/{behavior.id}/verification-plan"
+                ),
+            )
+            resolved_id = policy(requirement, behavior)
+        complete_properties = {
+            "requirement": requirement.ref,
+            "behavior": behavior.ref,
+            "strategy": strategy,
+            "testLevels": list(test_levels),
+            "environments": list(environments),
+            **dict(properties or {}),
+        }
+        if implementation is not None:
+            complete_properties["implementation"] = implementation.ref
+
+        try:
+            existing = self.model.latest(resolved_id)
+        except KeyError:
+            existing = None
+        if existing is not None and existing.properties == complete_properties:
+            plan = existing
+        else:
+            revision = existing.revision + 1 if existing is not None else 1
+            supersedes = (existing.ref,) if existing is not None else ()
+            plan = Artifact(
+                id=resolved_id,
+                kind=self.kinds.verification_plan,
+                revision=revision,
+                properties=complete_properties,
+                supersedes=supersedes,
+            )
+            plan = self.model.add_artifact(plan)
+            if existing is not None:
+                self.model.ensure_trace(
+                    TraceKind.SUPERSEDES,
+                    existing,
+                    plan,
+                    "plan_verification",
+                )
+        self.model.ensure_trace(
+            TraceKind.COVERS,
+            plan,
+            requirement,
+            "plan_verification",
+        )
+        self.model.ensure_trace(
+            TraceKind.EXECUTES,
+            plan,
+            behavior,
+            "plan_verification",
+        )
+        return plan
+
     def verify_satisfaction(
         self,
         requirement: Artifact,
@@ -284,6 +764,8 @@ class LifecycleEngine:
         component_cases: Iterable[Mapping[str, object]],
         simulated_scenarios: Iterable[Mapping[str, object]],
         implementation: Artifact | None = None,
+        verification_plan: Artifact | str | None = None,
+        execution_environment: Mapping[str, object] | None = None,
     ) -> tuple[Artifact, tuple[Artifact, ...], tuple[Artifact, ...]]:
         if kind_value(requirement.kind) != kind_value(self.kinds.requirement):
             raise TypeError("verify_satisfaction requires the configured requirement kind")
@@ -422,6 +904,10 @@ class LifecycleEngine:
         }
         if implementation is not None:
             evidence_properties["implementation"] = implementation.ref
+        if verification_plan is not None:
+            evidence_properties["verificationPlan"] = verification_plan.ref
+        if execution_environment is not None:
+            evidence_properties["executionEnvironment"] = dict(execution_environment)
 
         try:
             existing = self.model.latest(evidence_id)
@@ -454,6 +940,13 @@ class LifecycleEngine:
             evidence,
             "verify_satisfaction",
         )
+        if verification_plan is not None:
+            self.model.ensure_trace(
+                TraceKind.VERIFIES,
+                verification_plan,
+                evidence,
+                "verify_satisfaction",
+            )
         return evidence, tuple(component_artifacts), tuple(scenario_artifacts)
 
     def propagate_change(self, root: Artifact) -> ImpactPlan:
@@ -475,6 +968,7 @@ class LifecycleEngine:
 
         impacted: list[str] = []
         invalidated: list[str] = []
+        invalidated_artifacts: list[str] = []
         for artifact_ref in sorted(visited):
             if artifact_ref == root.ref:
                 continue
@@ -483,17 +977,30 @@ class LifecycleEngine:
             except KeyError:
                 continue
             impacted.append(artifact_ref)
+            artifact_kind = kind_value(artifact.kind)
+            if artifact_kind in {
+                kind_value(self.kinds.behavior_element),
+                kind_value(self.kinds.interface),
+                kind_value(self.kinds.port),
+                kind_value(self.kinds.implementation),
+                kind_value(self.kinds.allocation),
+                kind_value(self.kinds.deployment),
+                kind_value(self.kinds.verification_plan),
+            }:
+                invalidated_artifacts.append(artifact_ref)
             if kind_value(artifact.kind) == kind_value(
                 self.kinds.verification_evidence
             ):
                 checked_requirement = artifact.properties.get("requirement")
                 if checked_requirement and checked_requirement != root.ref:
                     invalidated.append(artifact_ref)
+                    invalidated_artifacts.append(artifact_ref)
 
         return ImpactPlan(
             root=root.ref,
             impacted=tuple(impacted),
             invalidatedEvidence=tuple(invalidated),
+            invalidatedArtifacts=tuple(sorted(set(invalidated_artifacts))),
         )
 
     def reconcile_views(
@@ -579,7 +1086,12 @@ class LifecycleEngine:
         )
         return self.model.add_baseline(baseline)
 
-    def check_continuity(self, requirement: Artifact) -> tuple[str, ...]:
+    def check_continuity(
+        self,
+        requirement: Artifact,
+        *,
+        strict: bool = False,
+    ) -> tuple[str, ...]:
         requirement = self.model.add_artifact(requirement)
         traces = self.model.active_traces()
         diagnostics: list[str] = []
@@ -642,5 +1154,79 @@ class LifecycleEngine:
             diagnostics.append(
                 f"requirement {requirement.ref} has no passing verification evidence"
             )
+
+        if strict:
+            implementations = [
+                link.target_ref
+                for link in traces
+                if trace_kind_value(link.kind) == "generates"
+                and link.source_ref in behavior_refs
+            ]
+            if not implementations:
+                diagnostics.append(
+                    f"requirement {requirement.ref} has no generated implementation"
+                )
+
+            plans = [
+                artifact.ref
+                for artifact in self.model.latest_artifacts()
+                if kind_value(artifact.kind)
+                == kind_value(self.kinds.verification_plan)
+                and artifact.properties.get("requirement") == requirement.ref
+            ]
+            if not plans:
+                diagnostics.append(
+                    f"requirement {requirement.ref} has no verification plan"
+                )
+
+            for behavior_ref in behavior_refs:
+                try:
+                    behavior = self.model.get(behavior_ref)
+                except KeyError:
+                    continue
+                model = BehaviorModel.from_artifact(behavior)
+                if not model.entry_point and not model.states and not model.actions:
+                    diagnostics.append(
+                        f"behavior {behavior.ref} has no executable entry point or actions"
+                    )
+                for call in model.function_calls:
+                    if not call.function_name:
+                        diagnostics.append(
+                            f"behavior {behavior.ref} has a function call with no function name"
+                        )
+                for communication in model.communications:
+                    if not communication.channel and not communication.endpoint:
+                        diagnostics.append(
+                            f"behavior {behavior.ref} communication "
+                            f"{communication.id} has no channel or endpoint"
+                        )
+                for schedule in model.schedules:
+                    if schedule.kind in ("cyclic", "periodic") and schedule.period_ms is None:
+                        diagnostics.append(
+                            f"behavior {behavior.ref} schedule "
+                            f"{schedule.id} has no period"
+                        )
+
+                allocations = [
+                    link
+                    for link in traces
+                    if trace_kind_value(link.kind) == "allocates"
+                    and link.source_ref == behavior.ref
+                ]
+                if not allocations:
+                    diagnostics.append(
+                        f"behavior {behavior.ref} has no architectural allocation"
+                    )
+
+                deployments = [
+                    link
+                    for link in traces
+                    if trace_kind_value(link.kind) == "deployed_to"
+                    and link.source_ref == behavior.ref
+                ]
+                if not deployments:
+                    diagnostics.append(
+                        f"behavior {behavior.ref} has no deployment target"
+                    )
 
         return tuple(diagnostics)

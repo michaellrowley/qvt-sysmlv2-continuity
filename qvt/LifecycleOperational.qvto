@@ -41,7 +41,6 @@ operation ensureTrace(
     existing.derivedBy := derivedBy;
     existing.status := 'active';
   } endif;
-
   return existing;
 }
 
@@ -67,6 +66,7 @@ operation developIntent(need : StakeholderNeed) : Requirement
   if requirementId = null then {
     requirementId := need.id;
   } endif;
+
   var existing : Requirement :=
     sysml.objects()[Requirement]->select(r |
       r.id = requirementId
@@ -87,6 +87,7 @@ operation developIntent(need : StakeholderNeed) : Requirement
   requirement.statement := need.statement;
   requirement.rationale := need.rationale;
   requirement.acceptanceCriteria := need.acceptanceCriteria;
+  requirement.sourceNeedId := need.id;
   ensureTrace(
     'origin',
     need.id,
@@ -100,13 +101,15 @@ operation developIntent(need : StakeholderNeed) : Requirement
 
 operation realizeArchitecture(
   requirement : Requirement,
-  elementNames : Sequence(String)
+  elements : Sequence(ArchitectureElementSpec)
 ) : Sequence(ArchitecturalElement)
 {
-  var elements : Sequence(ArchitecturalElement);
-  elementNames->forEach(name) {
+  var realized : Sequence(ArchitecturalElement);
+  elements->forEach(spec) {
     var elementId : String :=
-      requirement.id + '-' + name.toLower();
+      if spec.id <> null then spec.id
+      else requirement.id + '-' + spec.name.toLower()
+      endif;
     var existing : ArchitecturalElement :=
       sysml.objects()[ArchitecturalElement]->select(a |
         a.id = elementId
@@ -123,7 +126,10 @@ operation realizeArchitecture(
       supersede(existing, element, 'realizeArchitecture');
     } endif;
 
-    element.name := name;
+    element.name := spec.name;
+    element.requirementId := requirement.id;
+    element.requirementRevision := requirement.revision;
+    element.properties := spec.properties;
     ensureTrace(
       'realizes',
       requirement.id,
@@ -132,9 +138,105 @@ operation realizeArchitecture(
       element.revision,
       'realizeArchitecture'
     );
-    elements += element;
+    realized += element;
   };
-  return elements;
+  return realized;
+}
+
+operation realizeInterface(
+  requirement : Requirement,
+  architecture : ArchitecturalElement,
+  spec : InterfaceSpec
+) : Interface
+{
+  var interfaceElement : Interface :=
+    new SYSML::Interface();
+  interfaceElement.id := spec.id;
+  interfaceElement.revision := 1;
+  interfaceElement.name := spec.name;
+  interfaceElement.kind := spec.kind;
+  interfaceElement.protocol := spec.protocol;
+  interfaceElement.operations := spec.operations;
+  interfaceElement.properties := spec.properties;
+  ensureTrace(
+    'realizes',
+    requirement.id,
+    requirement.revision,
+    interfaceElement.id,
+    interfaceElement.revision,
+    'realizeInterface'
+  );
+  ensureTrace(
+    'exposes',
+    architecture.id,
+    architecture.revision,
+    interfaceElement.id,
+    interfaceElement.revision,
+    'realizeInterface'
+  );
+  spec.ports->forEach(portSpec) {
+    realizePort(interfaceElement, portSpec);
+  };
+  return interfaceElement;
+}
+
+operation realizePort(
+  interfaceElement : Interface,
+  spec : PortSpec
+) : Port
+{
+  var port : Port := new SYSML::Port();
+  port.id := spec.id;
+  port.revision := 1;
+  port.name := spec.name;
+  port.direction := spec.direction;
+  port.kind := spec.kind;
+  port.interfaceId := interfaceElement.id;
+  port.protocol := spec.protocol;
+  port.binding := spec.binding;
+  port.properties := spec.properties;
+  ensureTrace(
+    'exposes',
+    interfaceElement.id,
+    interfaceElement.revision,
+    port.id,
+    port.revision,
+    'realizePort'
+  );
+  return port;
+}
+
+operation connectPorts(
+  source : Port,
+  target : Port,
+  spec : ConnectionSpec
+) : Connection
+{
+  var connection : Connection := new SYSML::Connection();
+  connection.id := spec.id;
+  connection.revision := 1;
+  connection.sourcePortId := source.id;
+  connection.targetPortId := target.id;
+  connection.transport := spec.transport;
+  connection.qos := spec.qos;
+  connection.properties := spec.properties;
+  ensureTrace(
+    'connects',
+    source.id,
+    source.revision,
+    connection.id,
+    connection.revision,
+    'connectPorts'
+  );
+  ensureTrace(
+    'connects',
+    connection.id,
+    connection.revision,
+    target.id,
+    target.revision,
+    'connectPorts'
+  );
+  return connection;
 }
 
 operation realizeBehavior(
@@ -160,6 +262,20 @@ operation realizeBehavior(
     supersede(existing, behavior, 'realizeBehavior');
   } endif;
 
+  behavior.kind := properties.kind;
+  behavior.entryPoint := properties.entryPoint;
+  behavior.initialState := properties.initialState;
+  behavior.states := properties.states;
+  behavior.parameters := properties.parameters;
+  behavior.variables := properties.variables;
+  behavior.results := properties.results;
+  behavior.operations := properties.operations;
+  behavior.functionCalls := properties.functionCalls;
+  behavior.communications := properties.communications;
+  behavior.schedules := properties.schedules;
+  behavior.transitions := properties.transitions;
+  behavior.actions := properties.actions;
+  behavior.concurrency := properties.concurrency;
   behavior.properties := properties;
   architecture->forEach(element) {
     ensureTrace(
@@ -174,9 +290,149 @@ operation realizeBehavior(
   return behavior;
 }
 
+operation configureFunctionCall(
+  behavior : BehaviorElement,
+  spec : FunctionCallSpec
+) : FunctionCall
+{
+  var call : FunctionCall := new SYSML::FunctionCall();
+  call.id := spec.id;
+  call.revision := 1;
+  call.functionName := spec.functionName;
+  call.target := spec.target;
+  call.arguments := spec.arguments;
+  call.returnBinding := spec.returnBinding;
+  call.synchronous := spec.synchronous;
+  call.timeoutMs := spec.timeoutMs;
+  call.precondition := spec.precondition;
+  call.postcondition := spec.postcondition;
+  call.properties := spec.properties;
+  ensureTrace(
+    'calls',
+    behavior.id,
+    behavior.revision,
+    call.id,
+    call.revision,
+    'configureFunctionCall'
+  );
+  return call;
+}
+
+operation configureCommunication(
+  behavior : BehaviorElement,
+  spec : CommunicationSpec
+) : Communication
+{
+  var communication : Communication :=
+    new SYSML::Communication();
+  communication.id := spec.id;
+  communication.revision := 1;
+  communication.kind := spec.kind;
+  communication.direction := spec.direction;
+  communication.channel := spec.channel;
+  communication.endpoint := spec.endpoint;
+  communication.protocol := spec.protocol;
+  communication.operation := spec.operation;
+  communication.payloadType := spec.payloadType;
+  communication.payloadMapping := spec.payloadMapping;
+  communication.qos := spec.qos;
+  communication.timeoutMs := spec.timeoutMs;
+  communication.reliable := spec.reliable;
+  communication.properties := spec.properties;
+  ensureTrace(
+    'connects',
+    behavior.id,
+    behavior.revision,
+    communication.id,
+    communication.revision,
+    'configureCommunication'
+  );
+  return communication;
+}
+
+operation configureSchedule(
+  behavior : BehaviorElement,
+  spec : ScheduleSpec
+) : Schedule
+{
+  var schedule : Schedule := new SYSML::Schedule();
+  schedule.id := spec.id;
+  schedule.revision := 1;
+  schedule.kind := spec.kind;
+  schedule.periodMs := spec.periodMs;
+  schedule.startOffsetMs := spec.startOffsetMs;
+  schedule.deadlineMs := spec.deadlineMs;
+  schedule.wcetMs := spec.wcetMs;
+  schedule.priority := spec.priority;
+  schedule.jitterMs := spec.jitterMs;
+  schedule.entryPoint := spec.entryPoint;
+  schedule.trigger := spec.trigger;
+  schedule.properties := spec.properties;
+  ensureTrace(
+    'schedules',
+    behavior.id,
+    behavior.revision,
+    schedule.id,
+    schedule.revision,
+    'configureSchedule'
+  );
+  return schedule;
+}
+
+operation allocateBehavior(
+  behavior : BehaviorElement,
+  target : ArchitecturalElement,
+  spec : AllocationSpec
+) : Allocation
+{
+  var allocation : Allocation := new SYSML::Allocation();
+  allocation.id := spec.id;
+  allocation.revision := 1;
+  allocation.sourceRef := behavior.id + '@' + behavior.revision.toString();
+  allocation.targetRef := target.id + '@' + target.revision.toString();
+  allocation.kind := spec.kind;
+  allocation.properties := spec.properties;
+  ensureTrace(
+    'allocates',
+    behavior.id,
+    behavior.revision,
+    target.id,
+    target.revision,
+    'allocateBehavior'
+  );
+  return allocation;
+}
+
+operation deployComponent(
+  component : LifecycleElement,
+  target : LifecycleElement,
+  spec : DeploymentSpec
+) : Deployment
+{
+  var deployment : Deployment := new SYSML::Deployment();
+  deployment.id := spec.id;
+  deployment.revision := 1;
+  deployment.componentRef := component.id + '@' + component.revision.toString();
+  deployment.targetRef := target.id + '@' + target.revision.toString();
+  deployment.environment := spec.environment;
+  deployment.runtime := spec.runtime;
+  deployment.resources := spec.resources;
+  deployment.properties := spec.properties;
+  ensureTrace(
+    'deployed_to',
+    component.id,
+    component.revision,
+    target.id,
+    target.revision,
+    'deployComponent'
+  );
+  return deployment;
+}
+
 operation generateImplementation(
   behavior : BehaviorElement,
-  implementationId : String
+  implementationId : String,
+  codeGeneration : CodeGenerationSpec
 ) : Implementation
 {
   var implementation : Implementation :=
@@ -188,10 +444,19 @@ operation generateImplementation(
     implementation := new SYSML::Implementation();
     implementation.id := implementationId;
     implementation.revision := 1;
+  } else {
+    implementation.revision := implementation.revision + 1;
   } endif;
 
   implementation.sourceBehavior := behavior.id;
   implementation.sourceBehaviorRevision := behavior.revision;
+  implementation.language := codeGeneration.targetLanguage;
+  implementation.targetPlatform := codeGeneration.targetPlatform;
+  implementation.entryPoint := codeGeneration.entryPoint;
+  implementation.buildSystem := codeGeneration.buildSystem;
+  implementation.sourceFormat := codeGeneration.sourceFormat;
+  implementation.behaviorModel := behavior.properties;
+  implementation.codeGeneration := codeGeneration.properties;
   ensureTrace(
     'generates',
     behavior.id,
@@ -211,16 +476,60 @@ operation generateImplementation(
   return implementation;
 }
 
+operation planVerification(
+  requirement : Requirement,
+  behavior : BehaviorElement,
+  implementation : Implementation,
+  spec : VerificationPlanSpec
+) : VerificationPlan
+{
+  var plan : VerificationPlan := new SYSML::VerificationPlan();
+  plan.id := spec.id;
+  plan.revision := 1;
+  plan.requirementRef := requirement.id + '@' + requirement.revision.toString();
+  plan.behaviorRef := behavior.id + '@' + behavior.revision.toString();
+  plan.implementationRef := implementation.id + '@' + implementation.revision.toString();
+  plan.strategy := spec.strategy;
+  plan.testLevels := spec.testLevels;
+  plan.environments := spec.environments;
+  plan.properties := spec.properties;
+  ensureTrace(
+    'covers',
+    plan.id,
+    plan.revision,
+    requirement.id,
+    requirement.revision,
+    'planVerification'
+  );
+  ensureTrace(
+    'executes',
+    plan.id,
+    plan.revision,
+    behavior.id,
+    behavior.revision,
+    'planVerification'
+  );
+  return plan;
+}
+
 operation verifySatisfaction(
   requirement : Requirement,
   behavior : BehaviorElement,
   componentCases : Sequence(TestCase),
   simulatedScenarios : Sequence(TestCase),
   implementation : Implementation,
-  evidenceId : String
+  plan : VerificationPlan,
+  evidenceId : String,
+  executionEnvironment : ExecutionEnvironment
 ) : VerificationEvidence
 {
   componentCases->forEach(test) {
+    test.requirementId := requirement.id;
+    test.requirementRevision := requirement.revision;
+    test.behaviorId := behavior.id;
+    test.behaviorRevision := behavior.revision;
+    test.implementationId := implementation.id;
+    test.executionEnvironment := executionEnvironment;
     ensureTrace(
       'covers',
       test.id,
@@ -240,6 +549,12 @@ operation verifySatisfaction(
   };
 
   simulatedScenarios->forEach(test) {
+    test.requirementId := requirement.id;
+    test.requirementRevision := requirement.revision;
+    test.behaviorId := behavior.id;
+    test.behaviorRevision := behavior.revision;
+    test.implementationId := implementation.id;
+    test.executionEnvironment := executionEnvironment;
     ensureTrace(
       'covers',
       test.id,
@@ -262,10 +577,23 @@ operation verifySatisfaction(
     new SYSML::VerificationEvidence();
   evidence.id := evidenceId;
   evidence.revision := 1;
+  evidence.requirementRef := requirement.id + '@' + requirement.revision.toString();
+  evidence.behaviorRef := behavior.id + '@' + behavior.revision.toString();
+  evidence.implementationRef := implementation.id + '@' + implementation.revision.toString();
+  evidence.verificationPlan := plan.id + '@' + plan.revision.toString();
+  evidence.executionEnvironment := executionEnvironment;
   ensureTrace(
     'verifies',
     behavior.id,
     behavior.revision,
+    evidence.id,
+    evidence.revision,
+    'verifySatisfaction'
+  );
+  ensureTrace(
+    'verifies',
+    plan.id,
+    plan.revision,
     evidence.id,
     evidence.revision,
     'verifySatisfaction'
@@ -278,7 +606,8 @@ operation propagateChange(root : LifecycleElement) : ImpactPlan
   var plan : ImpactPlan := new CONTINUITY::ImpactPlan();
   plan.root := root.id + '@' + root.revision.toString();
   // Traverse active traces bidirectionally.
-  // Implementation detail: use the trace graph closure in the engine adapter.
+  // The runtime adapter expands the full implementation, allocation,
+  // deployment, verification-plan, and evidence closure.
   return plan;
 }
 
@@ -289,7 +618,8 @@ operation reconcileViews(
 {
   var reconciliation : Reconciliation :=
     new CONTINUITY::Reconciliation();
-  if left.id = right.id and left.kind = right.kind
+  if left.id = right.id
+     and left.kind = right.kind
      and left.properties = right.properties then {
     reconciliation.status := 'consistent';
   } else {
@@ -305,6 +635,18 @@ operation baselineThread(
   var baseline : Baseline := new CONTINUITY::Baseline();
   baseline.requirement :=
     requirement.id + '@' + requirement.revision.toString();
-  // Snapshot undirected active trace closure for the requirement.
+  // Snapshot the undirected active trace closure for the full thread.
   return baseline;
+}
+
+operation checkContinuity(
+  requirement : Requirement,
+  strict : Boolean
+) : Sequence(String)
+{
+  var diagnostics : Sequence(String);
+  // The runtime adapter performs graph and executable-contract checks.
+  // strict=true additionally requires implementation, allocation,
+  // deployment, verification-plan, and passing evidence coverage.
+  return diagnostics;
 }

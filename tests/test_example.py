@@ -32,6 +32,13 @@ def test_battery_example_is_complete_and_passes():
     assert len(result["architecture"]) == 4
     assert len(result["componentTests"]) == 4
     assert len(result["scenarioTests"]) == 3
+    assert result["behavior"]["properties"]["functionCalls"][0]["functionName"] == "generate_heater_command"
+    assert result["behavior"]["properties"]["communications"][0]["channel"] == "battery.temperature"
+    assert result["behavior"]["properties"]["schedules"][0]["periodMs"] == 100
+    assert result["allocation"]["kind"] == "allocation"
+    assert result["deployment"]["kind"] == "deployment"
+    assert result["verificationPlan"]["kind"] == "verification_plan"
+    assert result["implementation"]["properties"]["codeGeneration"]["targetLanguage"] == "Python"
     assert result["baseline"]["id"].startswith("BL-")
 
 

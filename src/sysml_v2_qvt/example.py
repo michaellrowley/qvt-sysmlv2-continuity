@@ -6,9 +6,14 @@ import json
 from pathlib import Path
 from typing import Any, Mapping
 
-from .codegen import generate_implementation
+from .codegen import CodeGenerationSpec, generate_implementation
 from .lifecycle import LifecycleEngine
-from .model import Artifact, ArtifactKind, ContinuityModel
+from .model import (
+    Artifact,
+    ArtifactKind,
+    BehaviorModel,
+    ContinuityModel,
+)
 
 
 def default_battery_example() -> dict[str, Any]:
@@ -36,10 +41,166 @@ def default_battery_example() -> dict[str, Any]:
         "behavior": {
             "id": "B-BATT-THERMAL-CONTROL",
             "kind": "state_machine",
+            "entryPoint": "generate_heater_command",
+            "initialState": "HOLD",
             "states": ["HEAT", "HOLD", "SAFE_OFF"],
             "heatBelowC": 24.0,
             "offAboveC": 26.0,
             "safeOffOnSensorFault": True,
+            "parameters": [
+                {
+                    "name": "temperatureC",
+                    "typeName": "float",
+                    "direction": "in",
+                    "required": True,
+                },
+                {
+                    "name": "sensorValid",
+                    "typeName": "bool",
+                    "direction": "in",
+                    "default": True,
+                },
+                {
+                    "name": "currentState",
+                    "typeName": "str",
+                    "direction": "in",
+                    "default": "HOLD",
+                },
+            ],
+            "variables": [
+                {
+                    "name": "heaterCommand",
+                    "typeName": "str",
+                    "initialValue": "HOLD",
+                    "mutable": True,
+                }
+            ],
+            "results": [
+                {
+                    "name": "heaterCommand",
+                    "typeName": "str",
+                    "direction": "out",
+                }
+            ],
+            "operations": [
+                {
+                    "id": "OP-GENERATE-HEATER-COMMAND",
+                    "name": "generate_heater_command",
+                    "kind": "function",
+                    "parameters": [
+                        {
+                            "name": "temperatureC",
+                            "typeName": "float",
+                            "direction": "in",
+                        },
+                        {
+                            "name": "sensorValid",
+                            "typeName": "bool",
+                            "direction": "in",
+                            "default": True,
+                        },
+                    ],
+                    "results": [
+                        {
+                            "name": "heaterCommand",
+                            "typeName": "str",
+                            "direction": "out",
+                        }
+                    ],
+                    "asynchronous": False,
+                }
+            ],
+            "functionCalls": [
+                {
+                    "id": "CALL-GENERATE-HEATER-COMMAND",
+                    "functionName": "generate_heater_command",
+                    "target": "ThermalController",
+                    "synchronous": True,
+                    "timeoutMs": 10,
+                    "arguments": [
+                        {"name": "temperatureC", "expression": "sensorTemperatureC"},
+                        {"name": "sensorValid", "expression": "sensorValid"},
+                        {"name": "currentState", "expression": "heaterState"},
+                    ],
+                    "returnBinding": "heaterCommand",
+                }
+            ],
+            "communications": [
+                {
+                    "id": "COMM-TEMPERATURE-SENSOR",
+                    "kind": "subscription",
+                    "direction": "in",
+                    "channel": "battery.temperature",
+                    "protocol": "CAN",
+                    "payloadType": "TemperatureReading",
+                    "qos": {
+                        "periodMs": 100,
+                        "reliability": "best_effort",
+                    },
+                    "timeoutMs": 50,
+                    "reliable": True,
+                },
+                {
+                    "id": "COMM-HEATER-COMMAND",
+                    "kind": "command",
+                    "direction": "out",
+                    "channel": "heater.command",
+                    "protocol": "CAN",
+                    "payloadType": "HeaterCommand",
+                    "qos": {
+                        "priority": 7,
+                        "reliability": "eventual",
+                    },
+                    "timeoutMs": 10,
+                    "reliable": True,
+                }
+            ],
+            "schedules": [
+                {
+                    "id": "SCH-THERMAL-CONTROL",
+                    "kind": "cyclic",
+                    "periodMs": 100,
+                    "startOffsetMs": 0,
+                    "deadlineMs": 100,
+                    "wcetMs": 5,
+                    "priority": 50,
+                    "jitterMs": 1,
+                    "entryPoint": "generate_heater_command",
+                }
+            ],
+            "transitions": [
+                {
+                    "id": "TRANS-SENSOR-FAULT",
+                    "source": "HOLD",
+                    "target": "SAFE_OFF",
+                    "trigger": "SensorFault",
+                    "guard": "not sensorValid",
+                    "actions": [
+                        {
+                            "kind": "send",
+                            "target": "heater.command",
+                            "arguments": [
+                                {"name": "command", "value": "SAFE_OFF"}
+                            ],
+                        }
+                    ],
+                },
+                {
+                    "id": "TRANS-LOW-TEMPERATURE",
+                    "source": "HOLD",
+                    "target": "HEAT",
+                    "trigger": "TemperatureSample",
+                    "guard": "temperatureC < heatBelowC",
+                    "actions": [
+                        {
+                            "kind": "call",
+                            "target": "generate_heater_command",
+                            "returnBinding": "heaterCommand",
+                        }
+                    ],
+                },
+            ],
+            "concurrency": "cyclic",
         },
         "implementation": {
             "id": "C-BATT-THERMAL-CONTROL",
@@ -111,6 +272,17 @@ def default_battery_example() -> dict[str, Any]:
         ],
         "evidence": {
             "id": "E-BATT-THERMAL",
+        },
+        "change": {
+            "statement": (
+                "Keep the battery within 18 to 32 degrees Celsius during "
+                "normal operation and force safe-off after a sensor fault."
+            ),
+            "rationale": "Updated operating-temperature envelope.",
+            "acceptanceCriteria": [
+                "Normal-operation temperature remains between 18C and 32C.",
+                "A sensor fault produces SAFE_OFF.",
+            ],
         },
     }
 
@@ -271,11 +443,38 @@ def run_battery_example(
         for key, value in behavior_data.items()
         if key != "id"
     }
+    behavior_properties = BehaviorModel.from_dict(
+        behavior_properties
+    ).to_properties()
     behavior = engine.realize_behavior(
         requirement,
         architecture,
         behavior_data["id"],
         behavior_properties,
+    )
+    thermal_controller = next(
+        element
+        for element in architecture
+        if element.properties.get("name") == "ThermalController"
+    )
+    allocation = engine.allocate_behavior(
+        behavior,
+        thermal_controller,
+        properties={
+            "scheduler": "cyclic",
+        },
+    )
+    deployment = engine.deploy_component(
+        behavior,
+        thermal_controller,
+        deployment={
+            "environment": "battery-controller-node",
+            "runtime": "bare-metal",
+            "resources": {
+                "cpuMsPerPeriod": 5,
+                "memoryBytes": 4096,
+            },
+        },
     )
 
     implementation, implementation_source = generate_implementation(
@@ -285,6 +484,22 @@ def run_battery_example(
         generate_battery_controller_source,
         language="Python",
         entry_point="generate_heater_command",
+        code_generation=CodeGenerationSpec(
+            target_language="Python",
+            target_platform="embedded",
+            entry_point="generate_heater_command",
+            module_name="battery_thermal_controller",
+            build_system="none",
+            source_format="python",
+        ),
+    )
+    verification_plan = engine.plan_verification(
+        requirement,
+        behavior,
+        implementation=implementation,
+        strategy="requirements-driven component and scenario verification",
+        test_levels=["component", "simulation"],
+        environments=["python-simulator", "hardware-in-loop"],
     )
 
     component_results = [
@@ -337,17 +552,25 @@ def run_battery_example(
             for scenario in data["scenarios"]
         ],
         implementation=implementation,
+        verification_plan=verification_plan,
+        execution_environment={
+            "kind": "python-simulator",
+            "target": "generic",
+        },
     )
 
     baseline = engine.baseline_thread(requirement)
-    diagnostics = engine.check_continuity(requirement)
+    diagnostics = engine.check_continuity(requirement, strict=True)
     return {
         "need": need.to_dict(),
         "requirement": requirement.to_dict(),
         "architecture": [element.to_dict() for element in architecture],
         "behavior": behavior.to_dict(),
+        "allocation": allocation.to_dict(),
+        "deployment": deployment.to_dict(),
         "implementation": implementation.to_dict(),
         "implementationSource": implementation_source,
+        "verificationPlan": verification_plan.to_dict(),
         "componentResults": component_results,
         "scenarioResults": scenario_results,
         "componentTests": [test.to_dict() for test in component_tests],

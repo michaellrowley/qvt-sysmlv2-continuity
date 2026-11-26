@@ -6,12 +6,13 @@ import argparse
 import json
 from pathlib import Path
 
+from .codegen import CodeGenerationSpec
 from .example import (
     generate_battery_controller_source,
     load_battery_example,
     run_battery_example,
 )
-from .model import Artifact, ArtifactKind
+from .model import Artifact, ArtifactKind, BehaviorModel
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -52,6 +53,7 @@ def main(argv: list[str] | None = None) -> int:
         example_data = data or load_battery_example()
         engine = LifecycleEngine()
         baseline_result = run_battery_example(example_data, engine.model)
+        change_data = example_data.get("change", {})
 
         changed_need = Artifact(
             id=example_data["need"]["id"],
@@ -64,14 +66,19 @@ def main(argv: list[str] | None = None) -> int:
                     else {}
                 ),
                 "statement": (
-                    "Keep the battery within 18 to 32 degrees Celsius during "
-                    "normal operation and force safe-off after a sensor fault."
+                    change_data.get(
+                        "statement",
+                        example_data["need"]["statement"],
+                    )
                 ),
-                "rationale": "Updated operating-temperature envelope.",
-                "acceptanceCriteria": [
-                    "Normal-operation temperature remains between 18C and 32C.",
-                    "A sensor fault produces SAFE_OFF.",
-                ],
+                "rationale": change_data.get(
+                    "rationale",
+                    example_data["need"]["rationale"],
+                ),
+                "acceptanceCriteria": change_data.get(
+                    "acceptanceCriteria",
+                    example_data["need"]["acceptanceCriteria"],
+                ),
             },
         )
         engine.model.add_artifact(changed_need)
@@ -88,11 +95,13 @@ def main(argv: list[str] | None = None) -> int:
             revised_requirement,
             revised_architecture,
             example_data["behavior"]["id"],
-            {
-                key: value
-                for key, value in example_data["behavior"].items()
-                if key != "id"
-            },
+            BehaviorModel.from_dict(
+                {
+                    key: value
+                    for key, value in example_data["behavior"].items()
+                    if key != "id"
+                }
+            ),
         )
         generate_implementation(
             engine.model,
@@ -101,6 +110,29 @@ def main(argv: list[str] | None = None) -> int:
             generate_battery_controller_source,
             language="Python",
             entry_point="generate_heater_command",
+            code_generation=CodeGenerationSpec(
+                target_language="Python",
+                target_platform="embedded",
+                entry_point="generate_heater_command",
+                module_name="battery_thermal_controller",
+            ),
+        )
+        thermal_controller = next(
+            element
+            for element in revised_architecture
+            if element.properties.get("name") == "ThermalController"
+        )
+        engine.allocate_behavior(revised_behavior, thermal_controller)
+        engine.deploy_component(revised_behavior, thermal_controller)
+        engine.plan_verification(
+            revised_requirement,
+            revised_behavior,
+            implementation=engine.model.latest(
+                example_data["implementation"]["id"]
+            ),
+            strategy="impact-propagation verification",
+            test_levels=["component", "simulation"],
+            environments=["python-simulator", "HIL"],
         )
 
         plan = engine.propagate_change(revised_requirement)

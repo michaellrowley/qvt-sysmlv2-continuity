@@ -1,7 +1,20 @@
 import pytest
 
+from sysml_v2_qvt.codegen import CodeGenerationSpec, generate_implementation
 from sysml_v2_qvt.lifecycle import LifecycleEngine, LifecycleKinds
-from sysml_v2_qvt.model import Artifact, ArtifactKind, TraceKind
+from sysml_v2_qvt.model import (
+    Artifact,
+    ArtifactKind,
+    BehaviorModel,
+    CommunicationSpec,
+    FunctionCallSpec,
+    InterfaceSpec,
+    OperationSpec,
+    ParameterSpec,
+    PortSpec,
+    ScheduleSpec,
+    TraceKind,
+)
 
 
 def test_full_lifecycle_enforces_trace_contract():
@@ -137,6 +150,7 @@ def test_requirement_revision_propagates_and_invalidates_evidence():
     assert plan.root == new_requirement.ref
     assert old_evidence.ref in plan.invalidatedEvidence
     assert old_requirement.ref in plan.impacted
+    assert old_evidence.ref in plan.invalidatedArtifacts
 
 
 def test_reconcile_views_reports_semantic_conflicts():
@@ -264,3 +278,171 @@ def test_lifecycle_accepts_custom_identity_policy():
     assert outcome.id == "OUTCOME/GOAL-7"
     assert architecture[0].id == "SOLUTION/OUTCOME/GOAL-7/SafetyCore"
     assert baseline.id.startswith("SNAPSHOT-")
+
+
+def test_full_system_behavior_is_traceable_and_executable():
+    engine = LifecycleEngine()
+    need = engine.model.add_artifact(
+        Artifact(
+            id="N-SYSTEM",
+            kind=ArtifactKind.STAKEHOLDER_NEED,
+            properties={
+                "statement": "Process commands and publish a status cyclically.",
+                "rationale": "Distributed control.",
+                "acceptanceCriteria": ["Status is published each cycle."],
+            },
+        )
+    )
+    requirement = engine.develop_intent(need, "R-SYSTEM")
+    architecture = engine.realize_architecture(
+        requirement,
+        [{"id": "A-CONTROLLER", "name": "Controller"}],
+    )
+    controller = architecture[0]
+
+    interface = engine.realize_interface(
+        requirement,
+        controller,
+        "IF-CONTROLLER",
+        InterfaceSpec(
+            id="IF-CONTROLLER",
+            name="ControllerInterface",
+            protocol="CAN",
+            operations=(
+                OperationSpec(
+                    id="OP-RUN",
+                    name="run",
+                    parameters=(
+                        ParameterSpec(
+                            name="command",
+                            type_name="Command",
+                            direction="in",
+                        ),
+                    ),
+                    results=(
+                        ParameterSpec(
+                            name="status",
+                            type_name="Status",
+                            direction="out",
+                        ),
+                    ),
+                ),
+            ),
+            ports=(
+                PortSpec(
+                    id="P-CONTROLLER-IN",
+                    name="command_in",
+                    direction="in",
+                    interface_id="IF-CONTROLLER",
+                ),
+                PortSpec(
+                    id="P-CONTROLLER-OUT",
+                    name="status_out",
+                    direction="out",
+                    interface_id="IF-CONTROLLER",
+                ),
+            ),
+        ),
+    )
+
+    behavior_model = BehaviorModel(
+        kind="state_machine",
+        entry_point="run",
+        initial_state="RUNNING",
+        states=("RUNNING", "FAULT"),
+        function_calls=(
+            FunctionCallSpec(
+                id="CALL-RUN",
+                function_name="run",
+                target="Controller",
+                synchronous=True,
+                timeout_ms=20,
+            ),
+        ),
+        communications=(
+            CommunicationSpec(
+                id="COMM-STATUS",
+                kind="publish",
+                direction="out",
+                channel="system.status",
+                protocol="DDS",
+                payload_type="Status",
+                qos={"periodMs": 10},
+                timeout_ms=5,
+            ),
+        ),
+        schedules=(
+            ScheduleSpec(
+                id="SCH-RUN",
+                kind="cyclic",
+                period_ms=10,
+                deadline_ms=10,
+                wcet_ms=2,
+                priority=40,
+                entry_point="run",
+            ),
+        ),
+    )
+    behavior = engine.realize_behavior(
+        requirement,
+        architecture,
+        "B-CONTROLLER",
+        behavior_model,
+    )
+    allocation = engine.allocate_behavior(
+        behavior,
+        controller,
+        properties={"partition": "control"},
+    )
+    deployment = engine.deploy_component(
+        behavior,
+        controller,
+        deployment={
+            "environment": "real-time-node",
+            "runtime": "RTOS",
+            "resources": {"cpuMsPerPeriod": 2},
+        },
+    )
+
+    implementation, source = generate_implementation(
+        engine.model,
+        behavior,
+        "C-CONTROLLER",
+        "int run(void) { publish_status(); return 0; }",
+        code_generation=CodeGenerationSpec(
+            target_language="C",
+            target_platform="RTOS",
+            entry_point="run",
+            build_system="CMake",
+        ),
+    )
+    plan = engine.plan_verification(
+        requirement,
+        behavior,
+        implementation=implementation,
+        strategy="component-and-integration",
+        test_levels=["component", "integration"],
+        environments=["simulator", "HIL"],
+    )
+    evidence, _, _ = engine.verify_satisfaction(
+        requirement,
+        behavior,
+        evidence_id="E-SYSTEM",
+        result="pass",
+        summary="All execution contracts passed.",
+        component_cases=[{"id": "TC-C-RUN"}],
+        simulated_scenarios=[{"id": "TC-S-RUN"}],
+        implementation=implementation,
+        verification_plan=plan,
+        execution_environment={"kind": "HIL", "target": "RTOS"},
+    )
+
+    assert interface.kind is ArtifactKind.INTERFACE
+    assert allocation.kind is ArtifactKind.ALLOCATION
+    assert deployment.kind is ArtifactKind.DEPLOYMENT
+    assert plan.kind is ArtifactKind.VERIFICATION_PLAN
+    assert evidence.properties["verificationPlan"] == plan.ref
+    assert implementation.properties["behaviorModel"]["functionCalls"][0]["functionName"] == "run"
+    assert implementation.properties["codeGeneration"]["targetLanguage"] == "C"
+    assert source == "int run(void) { publish_status(); return 0; }"
+    assert engine.check_continuity(requirement, strict=True) == ()

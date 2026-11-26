@@ -37,3 +37,11 @@ types are literal SysML v2 metaclass names.
 The example mappings use explicit source/target identities and properties rather
 than domain-specific ID prefixes. Domains can provide their own identity
 fields, artifact-role names, and code-generation adapters.
+
+The executable behavior contract includes typed parameters and variables,
+provided and required operations, function calls, communication subscriptions,
+publishes and commands, cyclic or event schedules, state transitions, and
+behavior actions. Interfaces, ports, connections, allocations, deployments,
+code-generation specifications, verification plans, execution environments,
+and implementation trace links are first-class contract elements rather than
+battery-specific properties.

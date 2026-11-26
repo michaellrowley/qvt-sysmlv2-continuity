@@ -6,7 +6,8 @@ transformation SysMLContinuity(
   top relation StakeholderNeedToRequirement {
     domain sysml need : StakeholderNeed {
       id = needId,
-      revision = needRevision
+      revision = needRevision,
+      requirementId = requirementId
     };
     domain sysml requirement : Requirement {
       id = requirementId,
@@ -21,10 +22,6 @@ transformation SysMLContinuity(
       targetRevision = requirementRevision,
       status = 'active'
     };
-
-    where {
-      requirement.sourceNeedId = needId;
-    }
   }
 
   top relation RequirementToArchitecture {
@@ -34,7 +31,9 @@ transformation SysMLContinuity(
     };
     domain sysml architecture : ArchitecturalElement {
       id = architectureId,
-      revision = architectureRevision
+      revision = architectureRevision,
+      requirementId = requirementId,
+      requirementRevision = requirementRevision
     };
     enforce domain continuity realization : TraceLink {
       kind = 'realizes',
@@ -44,8 +43,78 @@ transformation SysMLContinuity(
       targetRevision = architectureRevision,
       status = 'active'
     };
+  }
 
-    when { requirement.revision = requirementRevision; }
+  top relation ArchitectureToInterfaceAndPort {
+    domain sysml architecture : ArchitecturalElement {
+      id = architectureId,
+      revision = architectureRevision
+    };
+    domain sysml interface : Interface {
+      id = interfaceId,
+      revision = interfaceRevision,
+      protocol = protocolName,
+      operations = operations,
+      ports = ports
+    };
+    domain sysml port : Port {
+      id = portId,
+      revision = portRevision,
+      interfaceId = interfaceId,
+      direction = portDirection,
+      protocol = protocolName
+    };
+    enforce domain continuity exposure : TraceLink {
+      kind = 'exposes',
+      sourceId = architectureId,
+      sourceRevision = architectureRevision,
+      targetId = interfaceId,
+      targetRevision = interfaceRevision,
+      status = 'active'
+    };
+    enforce domain continuity portExposure : TraceLink {
+      kind = 'exposes',
+      sourceId = interfaceId,
+      sourceRevision = interfaceRevision,
+      targetId = portId,
+      targetRevision = portRevision,
+      status = 'active'
+    };
+  }
+
+  top relation PortToPortConnection {
+    domain sysml sourcePort : Port {
+      id = sourcePortId,
+      revision = sourcePortRevision
+    };
+    domain sysml targetPort : Port {
+      id = targetPortId,
+      revision = targetPortRevision
+    };
+    domain sysml connection : Connection {
+      id = connectionId,
+      revision = connectionRevision,
+      sourcePortId = sourcePortId,
+      targetPortId = targetPortId,
+      transport = transportName,
+      qos = qosProperties
+    };
+    enforce domain continuity sourceConnection : TraceLink {
+      kind = 'connects',
+      sourceId = sourcePortId,
+      sourceRevision = sourcePortRevision,
+      targetId = connectionId,
+      targetRevision = connectionRevision,
+      status = 'active'
+    };
+    enforce domain continuity targetConnection : TraceLink {
+      kind = 'connects',
+      sourceId = connectionId,
+      sourceRevision = connectionRevision,
+      targetId = targetPortId,
+      targetRevision = targetPortRevision,
+      status = 'active'
+    };
   }
 
   top relation ArchitectureToBehavior {
@@ -55,7 +124,21 @@ transformation SysMLContinuity(
     };
     domain sysml behavior : BehaviorElement {
       id = behaviorId,
-      revision = behaviorRevision
+      revision = behaviorRevision,
+      kind = behaviorKind,
+      entryPoint = entryPointName,
+      initialState = initialStateName,
+      states = states,
+      parameters = parameters,
+      variables = variables,
+      results = results,
+      operations = operations,
+      functionCalls = functionCalls,
+      communications = communications,
+      schedules = schedules,
+      transitions = transitions,
+      actions = actions,
+      concurrency = concurrencyMode
     };
     enforce domain continuity support : TraceLink {
       kind = 'supports',
@@ -67,16 +150,162 @@ transformation SysMLContinuity(
     };
   }
 
-  top relation BehaviorToImplementation {
+  top relation BehaviorFunctionCall {
+    domain sysml behavior : BehaviorElement {
+      id = behaviorId,
+      revision = behaviorRevision,
+      functionCalls = functionCalls
+    };
+    domain sysml call : FunctionCall {
+      id = callId,
+      revision = callRevision,
+      functionName = functionName,
+      target = callTarget,
+      arguments = arguments,
+      returnBinding = returnBinding,
+      synchronous = synchronous,
+      timeoutMs = timeoutMs
+    };
+    enforce domain continuity callTrace : TraceLink {
+      kind = 'calls',
+      sourceId = behaviorId,
+      sourceRevision = behaviorRevision,
+      targetId = callId,
+      targetRevision = callRevision,
+      status = 'active'
+    };
+  }
+
+  top relation BehaviorCommunication {
+    domain sysml behavior : BehaviorElement {
+      id = behaviorId,
+      revision = behaviorRevision,
+      communications = communications
+    };
+    domain sysml communication : Communication {
+      id = communicationId,
+      revision = communicationRevision,
+      kind = communicationKind,
+      direction = communicationDirection,
+      channel = channel,
+      endpoint = endpoint,
+      protocol = protocolName,
+      payloadType = payloadType,
+      qos = qosProperties,
+      timeoutMs = timeoutMs,
+      reliable = reliable
+    };
+    enforce domain continuity communicationTrace : TraceLink {
+      kind = 'connects',
+      sourceId = behaviorId,
+      sourceRevision = behaviorRevision,
+      targetId = communicationId,
+      targetRevision = communicationRevision,
+      status = 'active'
+    };
+  }
+
+  top relation BehaviorSchedule {
+    domain sysml behavior : BehaviorElement {
+      id = behaviorId,
+      revision = behaviorRevision,
+      schedules = schedules
+    };
+    domain sysml schedule : Schedule {
+      id = scheduleId,
+      revision = scheduleRevision,
+      kind = scheduleKind,
+      periodMs = periodMs,
+      deadlineMs = deadlineMs,
+      wcetMs = wcetMs,
+      priority = priority,
+      jitterMs = jitterMs,
+      entryPoint = entryPointName
+    };
+    enforce domain continuity scheduleTrace : TraceLink {
+      kind = 'schedules',
+      sourceId = behaviorId,
+      sourceRevision = behaviorRevision,
+      targetId = scheduleId,
+      targetRevision = scheduleRevision,
+      status = 'active'
+    };
+  }
+
+  top relation BehaviorToAllocation {
     domain sysml behavior : BehaviorElement {
       id = behaviorId,
       revision = behaviorRevision
+    };
+    domain sysml architecture : ArchitecturalElement {
+      id = targetId,
+      revision = targetRevision
+    };
+    domain sysml allocation : Allocation {
+      id = allocationId,
+      revision = allocationRevision,
+      sourceRef = behaviorId,
+      targetRef = targetId,
+      kind = allocationKind,
+      properties = allocationProperties
+    };
+    enforce domain continuity allocationTrace : TraceLink {
+      kind = 'allocates',
+      sourceId = behaviorId,
+      sourceRevision = behaviorRevision,
+      targetId = targetId,
+      targetRevision = targetRevision,
+      status = 'active'
+    };
+  }
+
+  top relation ComponentToDeployment {
+    domain sysml component : LifecycleElement {
+      id = componentId,
+      revision = componentRevision
+    };
+    domain sysml target : LifecycleElement {
+      id = targetId,
+      revision = targetRevision
+    };
+    domain sysml deployment : Deployment {
+      id = deploymentId,
+      revision = deploymentRevision,
+      componentRef = componentId,
+      targetRef = targetId,
+      environment = environmentName,
+      runtime = runtimeName,
+      resources = resources
+    };
+    enforce domain continuity deploymentTrace : TraceLink {
+      kind = 'deployed_to',
+      sourceId = componentId,
+      sourceRevision = componentRevision,
+      targetId = targetId,
+      targetRevision = targetRevision,
+      status = 'active'
+    };
+  }
+
+  top relation BehaviorToImplementation {
+    domain sysml behavior : BehaviorElement {
+      id = behaviorId,
+      revision = behaviorRevision,
+      functionCalls = functionCalls,
+      communications = communications,
+      schedules = schedules
     };
     domain sysml implementation : Implementation {
       id = implementationId,
       revision = implementationRevision,
       sourceBehavior = behaviorId,
-      sourceBehaviorRevision = behaviorRevision
+      sourceBehaviorRevision = behaviorRevision,
+      language = languageName,
+      targetPlatform = targetPlatform,
+      entryPoint = entryPointName,
+      buildSystem = buildSystem,
+      behaviorModel = behaviorModel,
+      codeGeneration = codeGenerationProperties
     };
     enforce domain continuity generation : TraceLink {
       kind = 'generates',
@@ -88,6 +317,49 @@ transformation SysMLContinuity(
     };
   }
 
+  top relation VerificationPlanToEvidence {
+    domain sysml requirement : Requirement {
+      id = requirementId,
+      revision = requirementRevision
+    };
+    domain sysml behavior : BehaviorElement {
+      id = behaviorId,
+      revision = behaviorRevision
+    };
+    domain sysml plan : VerificationPlan {
+      id = planId,
+      revision = planRevision,
+      requirementRef = requirementId,
+      behaviorRef = behaviorId,
+      strategy = strategyName,
+      testLevels = testLevels,
+      environments = environments
+    };
+    domain sysml evidence : VerificationEvidence {
+      id = evidenceId,
+      revision = evidenceRevision,
+      result = 'pass',
+      verificationPlan = planId,
+      executionEnvironment = executionEnvironment
+    };
+    enforce domain continuity planCoverage : TraceLink {
+      kind = 'covers',
+      sourceId = planId,
+      sourceRevision = planRevision,
+      targetId = requirementId,
+      targetRevision = requirementRevision,
+      status = 'active'
+    };
+    enforce domain continuity planVerification : TraceLink {
+      kind = 'verifies',
+      sourceId = planId,
+      sourceRevision = planRevision,
+      targetId = evidenceId,
+      targetRevision = evidenceRevision,
+      status = 'active'
+    };
+  }
+
   top relation TestToRequirementAndBehavior {
     domain sysml test : TestCase {
       id = testId,
@@ -95,7 +367,9 @@ transformation SysMLContinuity(
       requirementId = requirementId,
       requirementRevision = requirementRevision,
       behaviorId = behaviorId,
-      behaviorRevision = behaviorRevision
+      behaviorRevision = behaviorRevision,
+      implementationId = implementationId,
+      executionEnvironment = executionEnvironment
     };
     enforce domain continuity coverage : TraceLink {
       kind = 'covers',
@@ -111,26 +385,6 @@ transformation SysMLContinuity(
       sourceRevision = testRevision,
       targetId = behaviorId,
       targetRevision = behaviorRevision,
-      status = 'active'
-    };
-  }
-
-  top relation BehaviorToVerificationEvidence {
-    domain sysml behavior : BehaviorElement {
-      id = behaviorId,
-      revision = behaviorRevision
-    };
-    domain sysml evidence : VerificationEvidence {
-      id = evidenceId,
-      revision = evidenceRevision,
-      result = 'pass'
-    };
-    enforce domain continuity verification : TraceLink {
-      kind = 'verifies',
-      sourceId = behaviorId,
-      sourceRevision = behaviorRevision,
-      targetId = evidenceId,
-      targetRevision = evidenceRevision,
       status = 'active'
     };
   }
