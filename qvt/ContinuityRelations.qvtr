@@ -1,0 +1,137 @@
+transformation SysMLContinuity(
+  in sysml : SYSML,
+  out continuity : CONTINUITY
+) {
+
+  top relation StakeholderNeedToRequirement {
+    domain sysml need : StakeholderNeed {
+      id = needId,
+      revision = needRevision
+    };
+    domain sysml requirement : Requirement {
+      id = requirementId,
+      revision = requirementRevision
+    };
+    enforce domain continuity origin : TraceLink {
+      kind = 'origin',
+      sourceId = needId,
+      sourceRevision = needRevision,
+      targetId = requirementId,
+      targetRevision = requirementRevision,
+      status = 'active'
+    };
+
+    where {
+      requirementId = 'R-' + needId.substring(2);
+      requirementRevision >= needRevision;
+    }
+  }
+
+  top relation RequirementToArchitecture {
+    domain sysml requirement : Requirement {
+      id = requirementId,
+      revision = requirementRevision
+    };
+    domain sysml architecture : ArchitecturalElement {
+      id = architectureId,
+      revision = architectureRevision
+    };
+    enforce domain continuity realization : TraceLink {
+      kind = 'realizes',
+      sourceId = requirementId,
+      sourceRevision = requirementRevision,
+      targetId = architectureId,
+      targetRevision = architectureRevision,
+      status = 'active'
+    };
+
+    when { requirement.revision = requirementRevision; }
+  }
+
+  top relation ArchitectureToBehavior {
+    domain sysml architecture : ArchitecturalElement {
+      id = architectureId,
+      revision = architectureRevision
+    };
+    domain sysml behavior : BehaviorElement {
+      id = behaviorId,
+      revision = behaviorRevision
+    };
+    enforce domain continuity support : TraceLink {
+      kind = 'supports',
+      sourceId = architectureId,
+      sourceRevision = architectureRevision,
+      targetId = behaviorId,
+      targetRevision = behaviorRevision,
+      status = 'active'
+    };
+  }
+
+  top relation BehaviorToImplementation {
+    domain sysml behavior : BehaviorElement {
+      id = behaviorId,
+      revision = behaviorRevision
+    };
+    domain sysml implementation : Implementation {
+      id = implementationId,
+      revision = implementationRevision,
+      sourceBehavior = behaviorId,
+      sourceBehaviorRevision = behaviorRevision
+    };
+    enforce domain continuity generation : TraceLink {
+      kind = 'generates',
+      sourceId = behaviorId,
+      sourceRevision = behaviorRevision,
+      targetId = implementationId,
+      targetRevision = implementationRevision,
+      status = 'active'
+    };
+  }
+
+  top relation TestToRequirementAndBehavior {
+    domain sysml test : TestCase {
+      id = testId,
+      revision = testRevision,
+      requirementId = requirementId,
+      requirementRevision = requirementRevision,
+      behaviorId = behaviorId,
+      behaviorRevision = behaviorRevision
+    };
+    enforce domain continuity coverage : TraceLink {
+      kind = 'covers',
+      sourceId = testId,
+      sourceRevision = testRevision,
+      targetId = requirementId,
+      targetRevision = requirementRevision,
+      status = 'active'
+    };
+    enforce domain continuity execution : TraceLink {
+      kind = 'executes',
+      sourceId = testId,
+      sourceRevision = testRevision,
+      targetId = behaviorId,
+      targetRevision = behaviorRevision,
+      status = 'active'
+    };
+  }
+
+  top relation BehaviorToVerificationEvidence {
+    domain sysml behavior : BehaviorElement {
+      id = behaviorId,
+      revision = behaviorRevision
+    };
+    domain sysml evidence : VerificationEvidence {
+      id = evidenceId,
+      revision = evidenceRevision,
+      result = 'pass'
+    };
+    enforce domain continuity verification : TraceLink {
+      kind = 'verifies',
+      sourceId = behaviorId,
+      sourceRevision = behaviorRevision,
+      targetId = evidenceId,
+      targetRevision = evidenceRevision,
+      status = 'active'
+    };
+  }
+}

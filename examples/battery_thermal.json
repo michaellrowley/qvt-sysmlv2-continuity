@@ -1,0 +1,97 @@
+{
+  "need": {
+    "id": "N-BATT-THERMAL",
+    "statement": "Keep the battery within 20 to 30 degrees Celsius during normal operation and force safe-off after a temperature-sensor fault.",
+    "rationale": "Protect battery lifetime and prevent unsafe heater operation.",
+    "acceptanceCriteria": [
+      "Normal-operation temperature remains between 20C and 30C.",
+      "A sensor fault produces SAFE_OFF.",
+      "Fault handling completes within the declared timing budget."
+    ]
+  },
+  "architecture": [
+    "BatteryPack",
+    "TemperatureSensor",
+    "ThermalController",
+    "Heater"
+  ],
+  "behavior": {
+    "id": "B-BATT-THERMAL-CONTROL",
+    "kind": "state_machine",
+    "states": ["HEAT", "HOLD", "SAFE_OFF"],
+    "heatBelowC": 24.0,
+    "offAboveC": 26.0,
+    "safeOffOnSensorFault": true
+  },
+  "implementation": {
+    "id": "C-BATT-THERMAL-CONTROL"
+  },
+  "componentCases": [
+    {
+      "id": "TC-C-LOW",
+      "purpose": "Low temperature requests heat.",
+      "temperatureC": 20.0,
+      "sensorValid": true,
+      "currentState": "HOLD",
+      "expected": "HEAT"
+    },
+    {
+      "id": "TC-C-HIGH",
+      "purpose": "High temperature turns the heater off.",
+      "temperatureC": 32.0,
+      "sensorValid": true,
+      "currentState": "HOLD",
+      "expected": "OFF"
+    },
+    {
+      "id": "TC-C-DEADBAND",
+      "purpose": "Deadband preserves the prior state.",
+      "temperatureC": 25.0,
+      "sensorValid": true,
+      "currentState": "HOLD",
+      "expected": "HOLD"
+    },
+    {
+      "id": "TC-C-SENSOR-FAULT",
+      "purpose": "Sensor fault forces safe-off.",
+      "temperatureC": 25.0,
+      "sensorValid": false,
+      "currentState": "HEAT",
+      "expected": "SAFE_OFF"
+    }
+  ],
+  "scenarios": [
+    {
+      "id": "TC-S-COLD-START",
+      "purpose": "Cold battery recovers into the normal temperature band.",
+      "initialTemperatureC": 18.0,
+      "ambientTemperatureC": 20.0,
+      "steps": 50,
+      "faultStep": null,
+      "minTemperatureC": 20.0,
+      "maxTemperatureC": 30.0
+    },
+    {
+      "id": "TC-S-HOT-AMBIENT",
+      "purpose": "Hot ambient conditions cool below the upper limit.",
+      "initialTemperatureC": 32.0,
+      "ambientTemperatureC": 28.0,
+      "steps": 50,
+      "faultStep": null,
+      "minTemperatureC": 20.0,
+      "maxTemperatureC": 30.0
+    },
+    {
+      "id": "TC-S-SENSOR-LOSS",
+      "purpose": "Sensor loss drives and maintains safe-off.",
+      "initialTemperatureC": 27.0,
+      "ambientTemperatureC": 25.0,
+      "steps": 30,
+      "faultStep": 5,
+      "requireSafeOff": true
+    }
+  ],
+  "evidence": {
+    "id": "E-BATT-THERMAL"
+  }
+}

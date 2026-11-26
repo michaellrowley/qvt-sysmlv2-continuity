@@ -1,0 +1,307 @@
+modeltype SYSML uses sysml('urn:sysml:v2:lite');
+modeltype CONTINUITY uses continuity('urn:qvt:continuity');
+
+transformation SysMLLifecycle(
+  inout sysml : SYSML,
+  inout continuity : CONTINUITY
+);
+
+main() {
+  sysml.objects()[StakeholderNeed]->forEach(need) {
+    developIntent(need);
+  };
+}
+
+operation ensureTrace(
+  kind : String,
+  sourceId : String,
+  sourceRevision : Integer,
+  targetId : String,
+  targetRevision : Integer,
+  derivedBy : String
+) : TraceLink
+{
+  var existing : TraceLink :=
+    continuity.objects()[TraceLink]->select(link |
+      link.kind = kind
+      and link.sourceId = sourceId
+      and link.sourceRevision = sourceRevision
+      and link.targetId = targetId
+      and link.targetRevision = targetRevision
+      and link.status = 'active'
+    )->first();
+
+  if existing = null then {
+    existing := new CONTINUITY::TraceLink();
+    existing.kind := kind;
+    existing.sourceId := sourceId;
+    existing.sourceRevision := sourceRevision;
+    existing.targetId := targetId;
+    existing.targetRevision := targetRevision;
+    existing.derivedBy := derivedBy;
+    existing.status := 'active';
+  } endif;
+
+  return existing;
+}
+
+operation supersede(
+  oldElement : LifecycleElement,
+  newElement : LifecycleElement,
+  derivedBy : String
+) : TraceLink
+{
+  return ensureTrace(
+    'supersedes',
+    oldElement.id,
+    oldElement.revision,
+    newElement.id,
+    newElement.revision,
+    derivedBy
+  );
+}
+
+operation developIntent(need : StakeholderNeed) : Requirement
+{
+  var requirementId : String := 'R-' + need.id.substring(2);
+  var existing : Requirement :=
+    sysml.objects()[Requirement]->select(r |
+      r.id = requirementId
+    )->first();
+
+  var requirement : Requirement;
+  if existing = null then {
+    requirement := new SYSML::Requirement();
+    requirement.id := requirementId;
+    requirement.revision := 1;
+  } else {
+    requirement := new SYSML::Requirement();
+    requirement.id := existing.id;
+    requirement.revision := existing.revision + 1;
+    supersede(existing, requirement, 'developIntent');
+  } endif;
+
+  requirement.statement := need.statement;
+  requirement.rationale := need.rationale;
+  requirement.acceptanceCriteria := need.acceptanceCriteria;
+  ensureTrace(
+    'origin',
+    need.id,
+    need.revision,
+    requirement.id,
+    requirement.revision,
+    'developIntent'
+  );
+  return requirement;
+}
+
+operation realizeArchitecture(
+  requirement : Requirement,
+  elementNames : Sequence(String)
+) : Sequence(ArchitecturalElement)
+{
+  var elements : Sequence(ArchitecturalElement);
+  elementNames->forEach(name) {
+    var elementId : String :=
+      'A-' + requirement.id + '-' + name.toLower();
+    var existing : ArchitecturalElement :=
+      sysml.objects()[ArchitecturalElement]->select(a |
+        a.id = elementId
+      )->first();
+
+    var element : ArchitecturalElement;
+    if existing = null then {
+      element := new SYSML::ArchitecturalElement();
+      element.id := elementId;
+      element.revision := 1;
+    } else {
+      element := existing;
+      element.revision := existing.revision + 1;
+      supersede(existing, element, 'realizeArchitecture');
+    } endif;
+
+    element.name := name;
+    ensureTrace(
+      'realizes',
+      requirement.id,
+      requirement.revision,
+      element.id,
+      element.revision,
+      'realizeArchitecture'
+    );
+    elements += element;
+  };
+  return elements;
+}
+
+operation realizeBehavior(
+  requirement : Requirement,
+  architecture : Sequence(ArchitecturalElement),
+  behaviorId : String,
+  properties : BehaviorProperties
+) : BehaviorElement
+{
+  var existing : BehaviorElement :=
+    sysml.objects()[BehaviorElement]->select(b |
+      b.id = behaviorId
+    )->first();
+
+  var behavior : BehaviorElement;
+  if existing = null then {
+    behavior := new SYSML::BehaviorElement();
+    behavior.id := behaviorId;
+    behavior.revision := 1;
+  } else {
+    behavior := existing;
+    behavior.revision := existing.revision + 1;
+    supersede(existing, behavior, 'realizeBehavior');
+  } endif;
+
+  behavior.properties := properties;
+  architecture->forEach(element) {
+    ensureTrace(
+      'supports',
+      element.id,
+      element.revision,
+      behavior.id,
+      behavior.revision,
+      'realizeBehavior'
+    );
+  };
+  return behavior;
+}
+
+operation generateImplementation(
+  behavior : BehaviorElement,
+  implementationId : String
+) : Implementation
+{
+  var implementation : Implementation :=
+    sysml.objects()[Implementation]->select(c |
+      c.id = implementationId
+    )->first();
+
+  if implementation = null then {
+    implementation := new SYSML::Implementation();
+    implementation.id := implementationId;
+    implementation.revision := 1;
+  } endif;
+
+  implementation.sourceBehavior := behavior.id;
+  implementation.sourceBehaviorRevision := behavior.revision;
+  ensureTrace(
+    'generates',
+    behavior.id,
+    behavior.revision,
+    implementation.id,
+    implementation.revision,
+    'deterministic_codegen'
+  );
+  ensureTrace(
+    'implements',
+    implementation.id,
+    implementation.revision,
+    behavior.id,
+    behavior.revision,
+    'deterministic_codegen'
+  );
+  return implementation;
+}
+
+operation verifySatisfaction(
+  requirement : Requirement,
+  behavior : BehaviorElement,
+  componentCases : Sequence(TestCase),
+  simulatedScenarios : Sequence(TestCase),
+  implementation : Implementation,
+  evidenceId : String
+) : VerificationEvidence
+{
+  componentCases->forEach(test) {
+    ensureTrace(
+      'covers',
+      test.id,
+      test.revision,
+      requirement.id,
+      requirement.revision,
+      'verifySatisfaction'
+    );
+    ensureTrace(
+      'executes',
+      test.id,
+      test.revision,
+      behavior.id,
+      behavior.revision,
+      'verifySatisfaction'
+    );
+  };
+
+  simulatedScenarios->forEach(test) {
+    ensureTrace(
+      'covers',
+      test.id,
+      test.revision,
+      requirement.id,
+      requirement.revision,
+      'verifySatisfaction'
+    );
+    ensureTrace(
+      'executes',
+      test.id,
+      test.revision,
+      behavior.id,
+      behavior.revision,
+      'verifySatisfaction'
+    );
+  };
+
+  var evidence : VerificationEvidence :=
+    new SYSML::VerificationEvidence();
+  evidence.id := evidenceId;
+  evidence.revision := 1;
+  ensureTrace(
+    'verifies',
+    behavior.id,
+    behavior.revision,
+    evidence.id,
+    evidence.revision,
+    'verifySatisfaction'
+  );
+  return evidence;
+}
+
+operation propagateChange(root : LifecycleElement) : ImpactPlan
+{
+  var plan : ImpactPlan := new CONTINUITY::ImpactPlan();
+  plan.root := root.id + '@' + root.revision.toString();
+  // Traverse active traces bidirectionally.
+  // Implementation detail: use the trace graph closure in the engine adapter.
+  return plan;
+}
+
+operation reconcileViews(
+  left : LifecycleElement,
+  right : LifecycleElement
+) : Reconciliation
+{
+  var reconciliation : Reconciliation :=
+    new CONTINUITY::Reconciliation();
+  if left.id = right.id and left.kind = right.kind
+     and left.properties = right.properties then {
+    reconciliation.status := 'consistent';
+  } else {
+    reconciliation.status := 'conflict';
+  } endif;
+  return reconciliation;
+}
+
+operation baselineThread(
+  requirement : Requirement
+) : Baseline
+{
+  var baseline : Baseline := new CONTINUITY::Baseline();
+  baseline.requirement :=
+    requirement.id + '@' + requirement.revision.toString();
+  // Snapshot undirected active trace closure for the requirement.
+  return baseline;
+}
