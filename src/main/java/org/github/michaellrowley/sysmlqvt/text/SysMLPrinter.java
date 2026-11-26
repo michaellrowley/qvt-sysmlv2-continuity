@@ -52,13 +52,16 @@ public final class SysMLPrinter {
             case PORT -> 5;
             case CONNECTION -> 6;
             case BEHAVIOR_ELEMENT -> 7;
-            case ALLOCATION -> 8;
-            case DEPLOYMENT -> 9;
-            case IMPLEMENTATION -> 10;
-            case VERIFICATION_PLAN -> 11;
-            case COMPONENT_TEST -> 12;
-            case SCENARIO_TEST -> 13;
-            case VERIFICATION_EVIDENCE -> 14;
+            case FUNCTION_CALL -> 8;
+            case COMMUNICATION -> 9;
+            case SCHEDULE -> 10;
+            case ALLOCATION -> 11;
+            case DEPLOYMENT -> 12;
+            case IMPLEMENTATION -> 13;
+            case VERIFICATION_PLAN -> 14;
+            case COMPONENT_TEST -> 15;
+            case SCENARIO_TEST -> 16;
+            case VERIFICATION_EVIDENCE -> 17;
         };
     }
 
@@ -114,6 +117,24 @@ public final class SysMLPrinter {
                     "offAboveC",
                     "safeOffOnSensorFault"
                 )
+            );
+            case FUNCTION_CALL -> appendBlock(
+                text,
+                "function call ",
+                artifact,
+                List.of("behavior", "functionName", "target", "arguments", "returnBinding")
+            );
+            case COMMUNICATION -> appendBlock(
+                text,
+                "communication ",
+                artifact,
+                List.of("behavior", "kind", "direction", "channel", "protocol", "payloadType")
+            );
+            case SCHEDULE -> appendBlock(
+                text,
+                "schedule ",
+                artifact,
+                List.of("behavior", "kind", "periodMs", "deadlineMs", "wcetMs", "priority")
             );
             case IMPLEMENTATION -> appendBlock(
                 text,

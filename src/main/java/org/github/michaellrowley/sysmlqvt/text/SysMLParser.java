@@ -42,6 +42,7 @@ public final class SysMLParser {
                 "(stakeholder\\s+need|requirement(?:\\s+def)?|part(?:\\s+def)?|" +
                 "interface(?:\\s+def)?|port(?:\\s+def)?|connection(?:\\s+def)?|" +
                 "behavior(?:\\s+def)?|implementation(?:\\s+def)?|" +
+                "function\\s+call|communication|schedule|" +
                 "allocation(?:\\s+def)?|deployment(?:\\s+def)?|" +
                 "verification\\s+plan|test\\s+component|test\\s+scenario|evidence)" +
                 "\\s+([A-Za-z][A-Za-z0-9_.-]*)([^\\r\\n]*)",
@@ -106,6 +107,9 @@ public final class SysMLParser {
             Pattern.compile("^port(?:\\s+def)?\\s+([A-Za-z][A-Za-z0-9_.-]*)", Pattern.CASE_INSENSITIVE),
             Pattern.compile("^connection(?:\\s+def)?\\s+([A-Za-z][A-Za-z0-9_.-]*)", Pattern.CASE_INSENSITIVE),
             Pattern.compile("^behavior(?:\\s+def)?\\s+([A-Za-z][A-Za-z0-9_.-]*)", Pattern.CASE_INSENSITIVE),
+            Pattern.compile("^function\\s+call\\s+([A-Za-z][A-Za-z0-9_.-]*)", Pattern.CASE_INSENSITIVE),
+            Pattern.compile("^communication\\s+([A-Za-z][A-Za-z0-9_.-]*)", Pattern.CASE_INSENSITIVE),
+            Pattern.compile("^schedule\\s+([A-Za-z][A-Za-z0-9_.-]*)", Pattern.CASE_INSENSITIVE),
             Pattern.compile("^implementation(?:\\s+def)?\\s+([A-Za-z][A-Za-z0-9_.-]*)", Pattern.CASE_INSENSITIVE),
             Pattern.compile("^allocation(?:\\s+def)?\\s+([A-Za-z][A-Za-z0-9_.-]*)", Pattern.CASE_INSENSITIVE),
             Pattern.compile("^deployment(?:\\s+def)?\\s+([A-Za-z][A-Za-z0-9_.-]*)", Pattern.CASE_INSENSITIVE),
@@ -122,6 +126,9 @@ public final class SysMLParser {
             ArtifactKind.PORT,
             ArtifactKind.CONNECTION,
             ArtifactKind.BEHAVIOR_ELEMENT,
+            ArtifactKind.FUNCTION_CALL,
+            ArtifactKind.COMMUNICATION,
+            ArtifactKind.SCHEDULE,
             ArtifactKind.IMPLEMENTATION,
             ArtifactKind.ALLOCATION,
             ArtifactKind.DEPLOYMENT,

@@ -108,6 +108,34 @@ public final class EcoreBridge {
                 set(object, "actions", properties.get("actions"));
                 set(object, "concurrency", string(properties, "concurrency"));
             }
+            case FUNCTION_CALL -> {
+                set(object, "functionName", string(properties, "functionName"));
+                set(object, "target", string(properties, "target"));
+                set(object, "arguments", properties.get("arguments"));
+                set(object, "returnBinding", string(properties, "returnBinding"));
+                set(object, "synchronous", properties.get("synchronous"));
+                set(object, "timeoutMs", properties.get("timeoutMs"));
+            }
+            case COMMUNICATION -> {
+                set(object, "communicationKind", string(properties, "kind"));
+                set(object, "direction", string(properties, "direction"));
+                set(object, "channel", string(properties, "channel"));
+                set(object, "endpoint", string(properties, "endpoint"));
+                set(object, "protocol", string(properties, "protocol"));
+                set(object, "payloadType", string(properties, "payloadType"));
+                set(object, "qos", properties.get("qos"));
+                set(object, "timeoutMs", properties.get("timeoutMs"));
+                set(object, "reliable", properties.get("reliable"));
+            }
+            case SCHEDULE -> {
+                set(object, "scheduleKind", string(properties, "kind"));
+                set(object, "periodMs", properties.get("periodMs"));
+                set(object, "deadlineMs", properties.get("deadlineMs"));
+                set(object, "wcetMs", properties.get("wcetMs"));
+                set(object, "priority", properties.get("priority"));
+                set(object, "jitterMs", properties.get("jitterMs"));
+                set(object, "entryPoint", string(properties, "entryPoint"));
+            }
             case ALLOCATION -> {
                 set(object, "sourceRef", string(properties, "sourceRef"));
                 set(object, "targetRef", string(properties, "targetRef"));
@@ -204,6 +232,11 @@ public final class EcoreBridge {
         properties.putIfAbsent("requirementId", get(object, "requirementId"));
         properties.putIfAbsent("name", get(object, "name"));
         properties.putIfAbsent("entryPoint", get(object, "entryPoint"));
+        properties.putIfAbsent("functionName", get(object, "functionName"));
+        properties.putIfAbsent("target", get(object, "target"));
+        properties.putIfAbsent("channel", get(object, "channel"));
+        properties.putIfAbsent("protocol", get(object, "protocol"));
+        properties.putIfAbsent("periodMs", get(object, "periodMs"));
 
         Object supersedesValue = get(object, "supersedes");
         List<String> supersedes = new ArrayList<>();
@@ -237,6 +270,9 @@ public final class EcoreBridge {
             case "VerificationPlan" -> ArtifactKind.VERIFICATION_PLAN;
             case "TestCase" -> ArtifactKind.COMPONENT_TEST;
             case "VerificationEvidence" -> ArtifactKind.VERIFICATION_EVIDENCE;
+            case "FunctionCall" -> ArtifactKind.FUNCTION_CALL;
+            case "Communication" -> ArtifactKind.COMMUNICATION;
+            case "Schedule" -> ArtifactKind.SCHEDULE;
             default -> ArtifactKind.REQUIREMENT;
         };
     }
@@ -256,6 +292,9 @@ public final class EcoreBridge {
             case VERIFICATION_PLAN -> "LifecycleElement";
             case COMPONENT_TEST, SCENARIO_TEST -> "LifecycleElement";
             case VERIFICATION_EVIDENCE -> "LifecycleElement";
+            case FUNCTION_CALL -> "FunctionCall";
+            case COMMUNICATION -> "Communication";
+            case SCHEDULE -> "Schedule";
         };
     }
 
