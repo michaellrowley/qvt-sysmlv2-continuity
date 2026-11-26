@@ -11,9 +11,9 @@ from .model import (
     ArtifactKind,
     BehaviorModel,
     ContinuityModel,
-    TraceKind,
     content_hash,
 )
+from .relations import ContinuityRelations
 
 
 SourceProvider = Callable[[Artifact], str] | str
@@ -85,6 +85,7 @@ def generate_implementation(
     code_generation: CodeGenerationSpec | Mapping[str, Any] | None = None,
 ) -> tuple[Artifact, str]:
     behavior = model.add_artifact(behavior)
+    relations = ContinuityRelations(model)
     source_text = source(behavior) if callable(source) else source
     digest = content_hash(source_text)
     spec = (
@@ -131,23 +132,20 @@ def generate_implementation(
         )
         implementation = model.add_artifact(implementation)
         if existing is not None:
-            model.ensure_trace(
-                TraceKind.SUPERSEDES,
+            relations.supersedes(
                 existing,
                 implementation,
-                "deterministic_codegen",
+                derived_by="deterministic_codegen",
             )
 
-    model.ensure_trace(
-        TraceKind.GENERATES,
+    relations.generates(
         behavior,
         implementation,
-        "deterministic_codegen",
+        derived_by="deterministic_codegen",
     )
-    model.ensure_trace(
-        TraceKind.IMPLEMENTS,
+    relations.implements(
         implementation,
         behavior,
-        "deterministic_codegen",
+        derived_by="deterministic_codegen",
     )
     return implementation, source_text

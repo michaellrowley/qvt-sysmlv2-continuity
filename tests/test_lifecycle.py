@@ -15,6 +15,7 @@ from sysml_v2_qvt.model import (
     ScheduleSpec,
     TraceKind,
 )
+from sysml_v2_qvt.relations import ContinuityRelations
 
 
 def test_full_lifecycle_enforces_trace_contract():
@@ -278,6 +279,53 @@ def test_lifecycle_accepts_custom_identity_policy():
     assert outcome.id == "OUTCOME/GOAL-7"
     assert architecture[0].id == "SOLUTION/OUTCOME/GOAL-7/SafetyCore"
     assert baseline.id.startswith("SNAPSHOT-")
+
+
+def test_continuity_relations_materialize_trace_links():
+    from sysml_v2_qvt.model import ContinuityModel
+
+    model = ContinuityModel()
+    relations = ContinuityRelations(model)
+    old_need = model.add_artifact(
+        Artifact(
+            id="N-SYSTEM",
+            kind=ArtifactKind.STAKEHOLDER_NEED,
+            revision=1,
+        )
+    )
+    requirement = model.add_artifact(
+        Artifact(
+            id="R-SYSTEM",
+            kind=ArtifactKind.REQUIREMENT,
+            revision=1,
+        )
+    )
+    replacement = model.add_artifact(
+        Artifact(
+            id="R-SYSTEM",
+            kind=ArtifactKind.REQUIREMENT,
+            revision=2,
+            supersedes=("R-SYSTEM@1",),
+        )
+    )
+
+    origin = relations.origin(
+        old_need,
+        requirement,
+        derived_by="develop_intent",
+    )
+    supersession = relations.supersedes(
+        requirement,
+        replacement,
+        derived_by="develop_intent",
+    )
+
+    assert origin.kind is TraceKind.ORIGIN
+    assert supersession.kind is TraceKind.SUPERSEDES
+    assert origin.source_ref == "N-SYSTEM@1"
+    assert origin.target_ref == "R-SYSTEM@1"
+    assert supersession.source_ref == "R-SYSTEM@1"
+    assert supersession.target_ref == "R-SYSTEM@2"
 
 
 def test_full_system_behavior_is_traceable_and_executable():

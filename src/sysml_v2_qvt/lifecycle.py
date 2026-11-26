@@ -27,6 +27,7 @@ from .model import (
     kind_value,
     trace_kind_value,
 )
+from .relations import ContinuityRelations
 
 
 def _slug(value: str) -> str:
@@ -146,6 +147,7 @@ class LifecycleEngine:
         kinds: LifecycleKinds | None = None,
     ) -> None:
         self.model = model or ContinuityModel()
+        self.relations = ContinuityRelations(self.model)
         self.identity_policy = identity_policy or DefaultIdentityPolicy()
         self.kinds = kinds or LifecycleKinds()
 
@@ -189,18 +191,16 @@ class LifecycleEngine:
             requirement = self.model.add_artifact(requirement)
 
             if existing is not None:
-                self.model.ensure_trace(
-                    TraceKind.SUPERSEDES,
+                self.relations.supersedes(
                     existing,
                     requirement,
-                    "develop_intent",
+                    derived_by="develop_intent",
                 )
 
-        self.model.ensure_trace(
-            TraceKind.ORIGIN,
+        self.relations.origin(
             need,
             requirement,
-            "develop_intent",
+            derived_by="develop_intent",
         )
         return requirement
 
@@ -276,18 +276,16 @@ class LifecycleEngine:
                 element = self.model.add_artifact(element)
 
                 if existing is not None:
-                    self.model.ensure_trace(
-                        TraceKind.SUPERSEDES,
+                    self.relations.supersedes(
                         existing,
                         element,
-                        "realize_architecture",
+                        derived_by="realize_architecture",
                     )
 
-            self.model.ensure_trace(
-                TraceKind.REALIZES,
+            self.relations.realizes(
                 requirement,
                 element,
-                "realize_architecture",
+                derived_by="realize_architecture",
             )
             elements.append(element)
         return tuple(elements)
@@ -330,19 +328,17 @@ class LifecycleEngine:
             behavior = self.model.add_artifact(behavior)
 
             if existing is not None:
-                self.model.ensure_trace(
-                    TraceKind.SUPERSEDES,
+                self.relations.supersedes(
                     existing,
                     behavior,
-                    "realize_behavior",
+                    derived_by="realize_behavior",
                 )
 
         for element in architecture:
-            self.model.ensure_trace(
-                TraceKind.SUPPORTS,
+            self.relations.supports(
                 element,
                 behavior,
-                "realize_behavior",
+                derived_by="realize_behavior",
             )
         return behavior
 
@@ -389,24 +385,21 @@ class LifecycleEngine:
             )
             interface_artifact = self.model.add_artifact(interface_artifact)
             if existing is not None:
-                self.model.ensure_trace(
-                    TraceKind.SUPERSEDES,
+                self.relations.supersedes(
                     existing,
                     interface_artifact,
-                    "realize_interface",
+                    derived_by="realize_interface",
                 )
 
-        self.model.ensure_trace(
-            TraceKind.REALIZES,
+        self.relations.realizes(
             requirement,
             interface_artifact,
-            "realize_interface",
+            derived_by="realize_interface",
         )
-        self.model.ensure_trace(
-            TraceKind.EXPOSES,
+        self.relations.exposes(
             architecture,
             interface_artifact,
-            "realize_interface",
+            derived_by="realize_interface",
         )
         for port in spec.ports:
             policy_port_id = getattr(
@@ -420,11 +413,10 @@ class LifecycleEngine:
                 port,
                 port_id=resolved_port_id,
             )
-            self.model.ensure_trace(
-                TraceKind.EXPOSES,
+            self.relations.exposes(
                 interface_artifact,
                 port_artifact,
-                "realize_interface",
+                derived_by="realize_interface",
             )
         return interface_artifact
 
@@ -465,18 +457,16 @@ class LifecycleEngine:
             )
             port_artifact = self.model.add_artifact(port_artifact)
             if existing is not None:
-                self.model.ensure_trace(
-                    TraceKind.SUPERSEDES,
+                self.relations.supersedes(
                     existing,
                     port_artifact,
-                    "realize_port",
+                    derived_by="realize_port",
                 )
 
-        self.model.ensure_trace(
-            TraceKind.EXPOSES,
+        self.relations.exposes(
             interface,
             port_artifact,
-            "realize_port",
+            derived_by="realize_port",
         )
         return port_artifact
 
@@ -513,23 +503,20 @@ class LifecycleEngine:
             )
             connection = self.model.add_artifact(connection)
             if existing is not None:
-                self.model.ensure_trace(
-                    TraceKind.SUPERSEDES,
+                self.relations.supersedes(
                     existing,
                     connection,
-                    "connect_ports",
+                    derived_by="connect_ports",
                 )
-        self.model.ensure_trace(
-            TraceKind.CONNECTS,
+        self.relations.connects(
             source_port,
             connection,
-            "connect_ports",
+            derived_by="connect_ports",
         )
-        self.model.ensure_trace(
-            TraceKind.CONNECTS,
+        self.relations.connects(
             connection,
             target_port,
-            "connect_ports",
+            derived_by="connect_ports",
         )
         return connection
 
@@ -588,23 +575,20 @@ class LifecycleEngine:
             )
             allocation_artifact = self.model.add_artifact(allocation_artifact)
             if existing is not None:
-                self.model.ensure_trace(
-                    TraceKind.SUPERSEDES,
+                self.relations.supersedes(
                     existing,
                     allocation_artifact,
-                    "allocate_behavior",
+                    derived_by="allocate_behavior",
                 )
-        self.model.ensure_trace(
-            TraceKind.ALLOCATES,
+        self.relations.allocates(
             behavior,
             target,
-            "allocate_behavior",
+            derived_by="allocate_behavior",
         )
-        self.model.ensure_trace(
-            TraceKind.ALLOCATES,
+        self.relations.allocates(
             allocation_artifact,
             target,
-            "allocate_behavior",
+            derived_by="allocate_behavior",
         )
         return allocation_artifact
 
@@ -658,23 +642,20 @@ class LifecycleEngine:
             )
             deployment_artifact = self.model.add_artifact(deployment_artifact)
             if existing is not None:
-                self.model.ensure_trace(
-                    TraceKind.SUPERSEDES,
+                self.relations.supersedes(
                     existing,
                     deployment_artifact,
-                    "deploy_component",
+                    derived_by="deploy_component",
                 )
-        self.model.ensure_trace(
-            TraceKind.DEPLOYED_TO,
+        self.relations.deployed_to(
             component,
             target,
-            "deploy_component",
+            derived_by="deploy_component",
         )
-        self.model.ensure_trace(
-            TraceKind.DEPLOYED_TO,
+        self.relations.deployed_to(
             deployment_artifact,
             target,
-            "deploy_component",
+            derived_by="deploy_component",
         )
         return deployment_artifact
 
@@ -733,23 +714,20 @@ class LifecycleEngine:
             )
             plan = self.model.add_artifact(plan)
             if existing is not None:
-                self.model.ensure_trace(
-                    TraceKind.SUPERSEDES,
+                self.relations.supersedes(
                     existing,
                     plan,
-                    "plan_verification",
+                    derived_by="plan_verification",
                 )
-        self.model.ensure_trace(
-            TraceKind.COVERS,
+        self.relations.covers(
             plan,
             requirement,
-            "plan_verification",
+            derived_by="plan_verification",
         )
-        self.model.ensure_trace(
-            TraceKind.EXECUTES,
+        self.relations.executes(
             plan,
             behavior,
-            "plan_verification",
+            derived_by="plan_verification",
         )
         return plan
 
@@ -807,31 +785,27 @@ class LifecycleEngine:
                 )
                 test = self.model.add_artifact(test)
                 if existing is not None:
-                    self.model.ensure_trace(
-                        TraceKind.SUPERSEDES,
+                    self.relations.supersedes(
                         existing,
                         test,
-                        "verify_satisfaction",
+                        derived_by="verify_satisfaction",
                     )
 
-            self.model.ensure_trace(
-                TraceKind.COVERS,
+            self.relations.covers(
                 test,
                 requirement,
-                "verify_satisfaction",
+                derived_by="verify_satisfaction",
             )
-            self.model.ensure_trace(
-                TraceKind.EXECUTES,
+            self.relations.executes(
                 test,
                 behavior,
-                "verify_satisfaction",
+                derived_by="verify_satisfaction",
             )
             if implementation is not None:
-                self.model.ensure_trace(
-                    TraceKind.EXECUTES,
+                self.relations.executes(
                     test,
                     implementation,
-                    "verify_satisfaction",
+                    derived_by="verify_satisfaction",
                 )
             component_artifacts.append(test)
 
@@ -866,31 +840,27 @@ class LifecycleEngine:
                 )
                 test = self.model.add_artifact(test)
                 if existing is not None:
-                    self.model.ensure_trace(
-                        TraceKind.SUPERSEDES,
+                    self.relations.supersedes(
                         existing,
                         test,
-                        "verify_satisfaction",
+                        derived_by="verify_satisfaction",
                     )
 
-            self.model.ensure_trace(
-                TraceKind.COVERS,
+            self.relations.covers(
                 test,
                 requirement,
-                "verify_satisfaction",
+                derived_by="verify_satisfaction",
             )
-            self.model.ensure_trace(
-                TraceKind.EXECUTES,
+            self.relations.executes(
                 test,
                 behavior,
-                "verify_satisfaction",
+                derived_by="verify_satisfaction",
             )
             if implementation is not None:
-                self.model.ensure_trace(
-                    TraceKind.EXECUTES,
+                self.relations.executes(
                     test,
                     implementation,
-                    "verify_satisfaction",
+                    derived_by="verify_satisfaction",
                 )
             scenario_artifacts.append(test)
 
@@ -927,25 +897,22 @@ class LifecycleEngine:
             )
             evidence = self.model.add_artifact(evidence)
             if existing is not None:
-                self.model.ensure_trace(
-                    TraceKind.SUPERSEDES,
+                self.relations.supersedes(
                     existing,
                     evidence,
-                    "verify_satisfaction",
+                    derived_by="verify_satisfaction",
                 )
 
-        self.model.ensure_trace(
-            TraceKind.VERIFIES,
+        self.relations.verifies(
             behavior,
             evidence,
-            "verify_satisfaction",
+            derived_by="verify_satisfaction",
         )
         if verification_plan is not None:
-            self.model.ensure_trace(
-                TraceKind.VERIFIES,
+            self.relations.verifies(
                 verification_plan,
                 evidence,
-                "verify_satisfaction",
+                derived_by="verify_satisfaction",
             )
         return evidence, tuple(component_artifacts), tuple(scenario_artifacts)
 

@@ -47,8 +47,14 @@ Show the change-impact shape:
 `checkonly` mode to report broken relations and in constrained `enforce` mode
 where the relation has a clear authoritative side.
 
-**QVT-Operational** implements transaction, sequencing, revision,
-supersession, reconciliation, impact, and baseline behavior.
+**QVT-Operational** executes lifecycle transactions: it creates and revises
+artifacts, marks supersession, sequences realization and verification,
+reconciles views, propagates impact, and snapshots baselines. It does not
+create `TraceLink` objects.
+
+Trace links are owned by `ContinuityRelations`: QVT-Relations declares their
+invariants, and a relation pass materializes the corresponding active links
+after operational transactions.
 
 **QVT-Core** is not authored here. It is an implementation/lowering concern,
 not a useful user-facing lifecycle language for this repository.
@@ -73,9 +79,6 @@ sequenceDiagram
     participant CG as Code generator
     participant V as Verification environment
 
-    Operator->>QR: checkonly / enforce
-    QR-->>QL: Continuity invariants and diagnostics
-
     Operator->>QL: main()
     QL->>SYS: Find StakeholderNeed objects
 
@@ -83,85 +86,77 @@ sequenceDiagram
         SYS-->>QL: StakeholderNeed
         QL->>SYS: developIntent(need)
         opt Existing requirement
-            QL->>QL: supersede(oldRequirement, newRequirement)
-            QL->>CT: ensureTrace("supersedes")
+            QL->>SYS: markSuperseded(oldRequirement, newRequirement)
         end
-        QL->>CT: ensureTrace("origin")
 
         QL->>SYS: realizeArchitecture(requirement, elementSpecs)
         loop Each architecture element
             opt Existing element
-                QL->>QL: supersede(oldElement, newElement)
-                QL->>CT: ensureTrace("supersedes")
+                QL->>SYS: markSuperseded(oldElement, newElement)
             end
-            QL->>CT: ensureTrace("realizes")
         end
 
         opt Interface and port realization
             QL->>SYS: realizeInterface(requirement, architecture, interfaceSpec)
-            QL->>CT: ensureTrace("realizes")
-            QL->>CT: ensureTrace("exposes")
 
             loop Each port
                 QL->>SYS: realizePort(interface, portSpec)
-                QL->>CT: ensureTrace("exposes")
             end
         end
 
         opt Port connection
             QL->>SYS: connectPorts(sourcePort, targetPort, connectionSpec)
-            QL->>CT: ensureTrace("connects")
         end
 
         QL->>SYS: realizeBehavior(requirement, architecture, behaviorSpec)
         opt Existing behavior
-            QL->>QL: supersede(oldBehavior, newBehavior)
-            QL->>CT: ensureTrace("supersedes")
+            QL->>SYS: markSuperseded(oldBehavior, newBehavior)
         end
-        QL->>CT: ensureTrace("supports")
 
         opt Function call
             QL->>SYS: configureFunctionCall(behavior, callSpec)
-            QL->>CT: ensureTrace("calls")
         end
 
         opt Communication
             QL->>SYS: configureCommunication(behavior, communicationSpec)
-            QL->>CT: ensureTrace("connects")
         end
 
         opt Schedule
             QL->>SYS: configureSchedule(behavior, scheduleSpec)
-            QL->>CT: ensureTrace("schedules")
         end
 
         opt Allocation
             QL->>SYS: allocateBehavior(behavior, target, allocationSpec)
-            QL->>CT: ensureTrace("allocates")
         end
 
         opt Deployment
             QL->>SYS: deployComponent(behavior, target, deploymentSpec)
-            QL->>CT: ensureTrace("deployed_to")
         end
 
         QL->>CG: generateImplementation(behavior, codeGenerationSpec)
         CG->>SYS: Create or revise Implementation
-        CG->>CT: ensureTrace("generates")
-        CG->>CT: ensureTrace("implements")
         CG-->>QL: Implementation
 
         QL->>SYS: planVerification(requirement, behavior, implementation, planSpec)
-        QL->>CT: ensureTrace("covers")
-        QL->>CT: ensureTrace("executes")
+
+        QL->>QR: enforceContinuityRelations(updatedThread)
+        QR->>SYS: Match SYSML artifacts and revisions
+        QR->>CT: Materialize active TraceLink objects
+        QR-->>QL: Relation diagnostics
+
+        alt Broken relation
+            Operator->>QL: checkonly / enforce
+            QL-->>Operator: Resolve or report relation
+        end
 
         QL->>V: verifySatisfaction(requirement, behavior, tests, plan, environment)
         loop Component tests and scenarios
-            V->>CT: ensureTrace("covers")
-            V->>CT: ensureTrace("executes")
+            V->>SYS: Produce test result
         end
-        V->>CT: ensureTrace("verifies")
         V-->>QL: VerificationEvidence
+
+        QL->>QR: enforceVerificationRelations(evidence)
+        QR->>CT: Materialize coverage and verification TraceLinks
 
         Operator->>QL: reconcileViews(left, right)
         QL->>SYS: Compare identity, kind, and properties
@@ -190,8 +185,11 @@ sequenceDiagram
         QL->>SYS: allocateBehavior / deployComponent
         QL->>CG: generateImplementation(revisedBehavior, revisedCodeGeneration)
         QL->>SYS: planVerification(revisedRequirement, revisedBehavior, revisedImplementation)
+        QL->>QR: enforceContinuityRelations(revisedThread)
+        QR->>CT: Revise active TraceLink objects
         QL->>V: verifySatisfaction(revisedThread)
-        V->>CT: Revise evidence and trace links
+        QL->>QR: enforceVerificationRelations(revisedEvidence)
+        QR->>CT: Revise coverage and verification TraceLinks
 
         QL->>QL: propagateChange(changedArtifact)
         QL->>CT: Traverse active traces bidirectionally
@@ -207,7 +205,8 @@ sequenceDiagram
 The main operation sequence is:
 `main` → `developIntent` → `realizeArchitecture` → interface/port and behavioral realization
 → allocation/deployment → `generateImplementation` → `planVerification`
-→ `verifySatisfaction` → `reconcileViews` → `baselineThread`
+→ Relations enforcement → `verifySatisfaction` → Relations enforcement
+→ `reconcileViews` → `baselineThread`
 → `checkContinuity`; changed artifacts loop back through this sequence via
 `propagateChange`.
 
@@ -236,6 +235,10 @@ outcome = engine.develop_intent(goal, "OUTCOME-1")
 `generate_implementation()` accepts the source text or a renderer callback,
 plus language and entry-point metadata. It never interprets domain properties:
 that belongs to the selected renderer.
+
+In the Python reference runtime, `LifecycleEngine` performs operational
+transactions and `ContinuityRelations` materializes trace links for the
+corresponding QVT-Relations invariants.
 
 ## Executable behavior contracts
 

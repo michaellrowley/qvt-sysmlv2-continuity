@@ -11,8 +11,14 @@ constraint/invariant layer:
 - behavior to passing verification evidence.
 
 `LifecycleOperational.qvto` is the execution layer. It creates revisions,
-adds supersession links, ensures trace links, verifies the full thread, computes
-impact, reconciles views, and snapshots baselines.
+marks supersession, verifies the full thread, computes impact, reconciles views,
+and snapshots baselines. It does not create `CONTINUITY::TraceLink` objects;
+those are declared and materialized by `ContinuityRelations.qvtr`.
+
+After an operational transaction, run the Relations transformation in
+`checkonly` mode to report broken invariants or in constrained `enforce` mode
+to create/update active trace links. Supersession is derived from a replacement
+artifact's `supersedes` references, not by an operational `ensureTrace` helper.
 
 The source files target a small adapter metamodel named `SYSML` and a
 continuity metamodel named `CONTINUITY`. Their type names are intentionally
@@ -22,7 +28,16 @@ explicit:
 - `SYSML::Requirement`
 - `SYSML::ArchitecturalElement`
 - `SYSML::BehaviorElement`
+- `SYSML::Interface`
+- `SYSML::Port`
+- `SYSML::Connection`
+- `SYSML::FunctionCall`
+- `SYSML::Communication`
+- `SYSML::Schedule`
+- `SYSML::Allocation`
+- `SYSML::Deployment`
 - `SYSML::Implementation`
+- `SYSML::VerificationPlan`
 - `SYSML::TestCase`
 - `SYSML::VerificationEvidence`
 - `CONTINUITY::TraceLink`

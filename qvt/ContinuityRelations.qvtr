@@ -3,6 +3,37 @@ transformation SysMLContinuity(
   out continuity : CONTINUITY
 ) {
 
+  // QVT-Relations owns continuity invariants and trace-link enforcement.
+  // QVT-Operational creates or revises artifacts, then this relation pass
+  // derives the corresponding active TraceLink objects.
+
+  top relation ArtifactSupersession {
+    domain sysml previous : LifecycleElement {
+      id = previousId,
+      revision = previousRevision
+    };
+    domain sysml replacement : LifecycleElement {
+      id = replacementId,
+      revision = replacementRevision,
+      supersedes = supersededRefs
+    };
+    enforce domain continuity supersession : TraceLink {
+      kind = 'supersedes',
+      sourceId = previousId,
+      sourceRevision = previousRevision,
+      targetId = replacementId,
+      targetRevision = replacementRevision,
+      status = 'active'
+    };
+    where {
+      replacementId = previousId;
+      replacementRevision = previousRevision + 1;
+      supersededRefs->includes(
+        previousId + '@' + previousRevision.toString()
+      );
+    }
+  }
+
   top relation StakeholderNeedToRequirement {
     domain sysml need : StakeholderNeed {
       id = needId,
@@ -315,6 +346,14 @@ transformation SysMLContinuity(
       targetRevision = implementationRevision,
       status = 'active'
     };
+    enforce domain continuity implementation : TraceLink {
+      kind = 'implements',
+      sourceId = implementationId,
+      sourceRevision = implementationRevision,
+      targetId = behaviorId,
+      targetRevision = behaviorRevision,
+      status = 'active'
+    };
   }
 
   top relation VerificationPlanToEvidence {
@@ -369,6 +408,7 @@ transformation SysMLContinuity(
       behaviorId = behaviorId,
       behaviorRevision = behaviorRevision,
       implementationId = implementationId,
+      implementationRevision = implementationRevision,
       executionEnvironment = executionEnvironment
     };
     enforce domain continuity coverage : TraceLink {
@@ -385,6 +425,14 @@ transformation SysMLContinuity(
       sourceRevision = testRevision,
       targetId = behaviorId,
       targetRevision = behaviorRevision,
+      status = 'active'
+    };
+    enforce domain continuity implementationExecution : TraceLink {
+      kind = 'executes',
+      sourceId = testId,
+      sourceRevision = testRevision,
+      targetId = implementationId,
+      targetRevision = implementationRevision,
       status = 'active'
     };
   }

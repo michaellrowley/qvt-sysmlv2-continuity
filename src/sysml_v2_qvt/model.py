@@ -932,7 +932,7 @@ class ContinuityModel:
     def latest_artifacts(self) -> tuple[Artifact, ...]:
         return tuple(sorted(self._latest.values(), key=lambda item: item.id))
 
-    def ensure_trace(
+    def materialize_trace(
         self,
         kind: TraceKind | str,
         source: Artifact,

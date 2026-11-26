@@ -26,6 +26,7 @@ from .model import (
     TraceKind,
     VariableSpec,
 )
+from .relations import ContinuityRelations
 
 __all__ = [
     "AllocationSpec",
@@ -37,6 +38,7 @@ __all__ = [
     "BehaviorTransition",
     "CodeGenerationSpec",
     "CommunicationSpec",
+    "ContinuityRelations",
     "DefaultIdentityPolicy",
     "DeploymentSpec",
     "FunctionCallSpec",
