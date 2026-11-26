@@ -129,6 +129,43 @@
       </plugin>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-antrun-plugin</artifactId>
+        <version>3.1.0</version>
+        <executions>
+          <execution>
+            <id>unpack-eclipse-qvt-libraries</id>
+            <phase>prepare-package</phase>
+            <goals>
+              <goal>run</goal>
+            </goals>
+            <configuration>
+              <target>
+                <unzip src="${project.basedir}/lib/org.eclipse.m2m.qvt.oml_3.11.2.v20260216-1113.jar" dest="${project.build.outputDirectory}"/>
+                <unzip src="${project.basedir}/lib/org.eclipse.m2m.qvt.oml.runtime_3.11.0.v20260216-1113.jar" dest="${project.build.outputDirectory}"/>
+                <unzip src="${project.basedir}/lib/org.eclipse.m2m.qvt.oml.common_3.11.0.v20260216-1113.jar" dest="${project.build.outputDirectory}"/>
+                <unzip src="${project.basedir}/lib/org.eclipse.m2m.qvt.oml.cst.parser_3.11.2.v20260216-1113.jar" dest="${project.build.outputDirectory}"/>
+                <unzip src="${project.basedir}/lib/org.eclipse.m2m.qvt.oml.emf.util_3.11.0.v20260216-1113.jar" dest="${project.build.outputDirectory}"/>
+                <unzip src="${project.basedir}/lib/org.eclipse.m2m.qvt.oml.ecore.imperativeocl_3.11.0.v20260216-1113.jar" dest="${project.build.outputDirectory}"/>
+                <unzip src="${project.basedir}/lib/org.eclipse.ocl_3.24.0.v20260601-1413.jar" dest="${project.build.outputDirectory}"/>
+                <unzip src="${project.basedir}/lib/org.eclipse.ocl.common_1.24.0.v20260601-1413.jar" dest="${project.build.outputDirectory}"/>
+                <unzip src="${project.basedir}/lib/org.eclipse.ocl.ecore_3.24.0.v20260601-1413.jar" dest="${project.build.outputDirectory}"/>
+                <delete>
+                  <fileset dir="${project.build.outputDirectory}/META-INF">
+                    <include name="*.SF"/>
+                    <include name="*.DSA"/>
+                    <include name="*.RSA"/>
+                    <include name="*.EC"/>
+                    <include name="ECLIPSE*.RSA"/>
+                    <include name="ECLIPSE*.SF"/>
+                  </fileset>
+                </delete>
+              </target>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-shade-plugin</artifactId>
         <version>3.6.0</version>
         <executions>
@@ -138,6 +175,7 @@
               <goal>shade</goal>
             </goals>
             <configuration>
+              <createDependencyReducedPom>false</createDependencyReducedPom>
               <filters>
                 <filter>
                   <artifact>*:*</artifact>

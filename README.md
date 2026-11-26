@@ -1,343 +1,95 @@
 # SysML v2 QVT continuity
 
-This repository provides a domain-neutral SysML v2 lifecycle with revisioned
-artifacts and traceability contracts.
-
-The lifecycle covers:
-
-- intent and architecture realization;
-- interfaces, ports, connections, function calls, communications, and scheduling;
-- executable behavior realization and implementation generation;
-- allocation, deployment, verification planning, and evidence;
-- change propagation, view reconciliation, continuity checks, and baselines.
-
-The battery thermal-control program is a demonstration adapter. Deterministic
-code generation is a caller-supplied source renderer; it is not a battery-specific
-QVT lifecycle operation.
-
-Use `LifecycleKinds` to name artifact roles for another domain or meta-model.
-Use `IdentityPolicy`/`DefaultIdentityPolicy` to control stable IDs for needs,
-requirements, architecture elements, tests, and baselines. Domain values belong
-in artifact properties and supplied data, not in the lifecycle engine.
-
-## Quick start
-
-```bash
-python3 -m venv .venv
-.venv/bin/python -m pip install -e .
-.venv/bin/python -m pytest -q
-.venv/bin/python -m sysml_v2_qvt.cli battery
-```
-
-Run a custom example data file:
-
-```bash
-.venv/bin/python -m sysml_v2_qvt.cli battery --data examples/battery_thermal.json
-```
-
-Show the change-impact shape:
-
-```bash
-.venv/bin/python -m sysml_v2_qvt.cli impact
-```
-
-## Remote SysML v2 API
-
-The lifecycle engine can store and retrieve revisioned artifacts through an HTTP
-API instead of the in-memory repository. Install the package, then run the
-battery example against a hosted service:
-
-```bash
-.venv/bin/python -m sysml_v2_qvt.cli battery \
-  --api-url https://sysml.example.test \
-  --api-project PROJECT-1 \
-  --api-token "$SYSML_V2_API_TOKEN"
-```
-
-`--api-token` creates a bearer authorization header. `SYSML_V2_API_TOKEN` can
-also provide it. API keys can be supplied through the Python adapter:
-
-```python
-from sysml_v2_qvt import LifecycleEngine, SysMLV2ApiModel
-
-model = SysMLV2ApiModel(
-    "https://sysml.example.test",
-    project_id="PROJECT-1",
-    api_key="project-api-key",
-)
-engine = LifecycleEngine(model)
-```
-
-The default REST contract is:
-
-- `POST/GET /api/v1/artifacts`
-- `GET /api/v1/artifacts/{id}/latest`
-- `GET /api/v1/artifacts/{id}/revisions/{revision}`
-- `POST/GET /api/v1/traces`
-- `POST/GET /api/v1/baselines`
-- `GET /api/v1/baselines/{id}`
-- `POST /api/v1/operations/{operation}`
-
-When `project_id` is set, these routes are nested under
-`/api/v1/projects/{project_id}`. Custom hosted services can override the
-artifacts, traces, baselines, health, and API-prefix paths through
-`SysMLV2ApiModel`.
-
-## Podman test API
-
-Build and start the included test API with Podman:
-
-```bash
-scripts/run-api-podman.sh
-```
-
-The API listens at `http://127.0.0.1:8080`. Run a lifecycle through it:
-
-```bash
-.venv/bin/python -m sysml_v2_qvt.cli battery \
-  --api-url http://127.0.0.1:8080
-```
-
-Run the containerized integration test:
-
-```bash
-scripts/test-api-podman.sh
-```
-
-## QVT roles
-
-**QVT-Relations** declares continuity invariants. It can be used in
-`checkonly` mode to report broken relations and in constrained `enforce` mode
-where the relation has a clear authoritative side.
-
-**QVT-Operational** executes lifecycle transactions: it creates and revises
-artifacts, marks supersession, sequences realization and verification,
-reconciles views, propagates impact, and snapshots baselines. It does not
-create `TraceLink` objects.
-
-Trace links are owned by `ContinuityRelations`: QVT-Relations declares their
-invariants, and a relation pass materializes the corresponding active links
-after operational transactions.
-
-**QVT-Core** is not authored here. It is an implementation/lowering concern,
-not a useful user-facing lifecycle language for this repository.
-
-The QVT sources reference a small adapter metamodel. They demonstrate the
-contract and mapping shape; the Python implementation is the executable
-reference runtime until a SysML v2 MOF adapter is connected.
-
-## End-to-end lifecycle sequence
-
-The operational flow below uses the QVT-Operational entry points and closes
-through verification, reconciliation, baselining, and change propagation.
+This repository uses SysML v2 text as the source model format and Eclipse
+QVTd 3.11.2 as the operational transformation engine.
 
 ```mermaid
-sequenceDiagram
-    autonumber
-    actor Operator
-    participant QR as QVT-Relations
-    participant QL as QVT-Operational
-    participant SYS as SYSML model
-    participant CT as Continuity model
-    participant CG as Code generator
-    participant V as Verification environment
-
-    Operator->>QL: main()
-    QL->>SYS: Find StakeholderNeed objects
-
-    loop Each stakeholder need
-        SYS-->>QL: StakeholderNeed
-        QL->>SYS: developIntent(need)
-        opt Existing requirement
-            QL->>SYS: markSuperseded(oldRequirement, newRequirement)
-        end
-
-        QL->>SYS: realizeArchitecture(requirement, elementSpecs)
-        loop Each architecture element
-            opt Existing element
-                QL->>SYS: markSuperseded(oldElement, newElement)
-            end
-        end
-
-        opt Interface and port realization
-            QL->>SYS: realizeInterface(requirement, architecture, interfaceSpec)
-
-            loop Each port
-                QL->>SYS: realizePort(interface, portSpec)
-            end
-        end
-
-        opt Port connection
-            QL->>SYS: connectPorts(sourcePort, targetPort, connectionSpec)
-        end
-
-        QL->>SYS: realizeBehavior(requirement, architecture, behaviorSpec)
-        opt Existing behavior
-            QL->>SYS: markSuperseded(oldBehavior, newBehavior)
-        end
-
-        opt Function call
-            QL->>SYS: configureFunctionCall(behavior, callSpec)
-        end
-
-        opt Communication
-            QL->>SYS: configureCommunication(behavior, communicationSpec)
-        end
-
-        opt Schedule
-            QL->>SYS: configureSchedule(behavior, scheduleSpec)
-        end
-
-        opt Allocation
-            QL->>SYS: allocateBehavior(behavior, target, allocationSpec)
-        end
-
-        opt Deployment
-            QL->>SYS: deployComponent(behavior, target, deploymentSpec)
-        end
-
-        QL->>CG: generateImplementation(behavior, codeGenerationSpec)
-        CG->>SYS: Create or revise Implementation
-        CG-->>QL: Implementation
-
-        QL->>SYS: planVerification(requirement, behavior, implementation, planSpec)
-
-        QL->>QR: enforceContinuityRelations(updatedThread)
-        QR->>SYS: Match SYSML artifacts and revisions
-        QR->>CT: Materialize active TraceLink objects
-        QR-->>QL: Relation diagnostics
-
-        alt Broken relation
-            Operator->>QL: checkonly / enforce
-            QL-->>Operator: Resolve or report relation
-        end
-
-        QL->>V: verifySatisfaction(requirement, behavior, tests, plan, environment)
-        loop Component tests and scenarios
-            V->>SYS: Produce test result
-        end
-        V-->>QL: VerificationEvidence
-
-        QL->>QR: enforceVerificationRelations(evidence)
-        QR->>CT: Materialize coverage and verification TraceLinks
-
-        Operator->>QL: reconcileViews(left, right)
-        QL->>SYS: Compare identity, kind, and properties
-        QL-->>Operator: Reconciliation
-
-        QL->>CT: baselineThread(requirement)
-        CT-->>Operator: Hash-addressed Baseline
-
-        QL->>CT: checkContinuity(requirement, strict=true)
-        alt Passing lifecycle
-            CT-->>Operator: No diagnostics
-        else Missing or failing continuity
-            CT-->>Operator: Diagnostics
-        end
-    end
-
-    opt Change propagation
-        Operator->>SYS: Revise need or lifecycle artifact
-        SYS-->>QL: New revision
-
-        QL->>SYS: developIntent(changedNeed)
-        QL->>SYS: realizeArchitecture(revisedRequirement, revisedSpecs)
-        QL->>SYS: realizeInterface / realizePort / connectPorts
-        QL->>SYS: realizeBehavior(revisedRequirement, revisedArchitecture, revisedSpecs)
-        QL->>SYS: configureFunctionCall / Communication / Schedule
-        QL->>SYS: allocateBehavior / deployComponent
-        QL->>CG: generateImplementation(revisedBehavior, revisedCodeGeneration)
-        QL->>SYS: planVerification(revisedRequirement, revisedBehavior, revisedImplementation)
-        QL->>QR: enforceContinuityRelations(revisedThread)
-        QR->>CT: Revise active TraceLink objects
-        QL->>V: verifySatisfaction(revisedThread)
-        QL->>QR: enforceVerificationRelations(revisedEvidence)
-        QR->>CT: Revise coverage and verification TraceLinks
-
-        QL->>QL: propagateChange(changedArtifact)
-        QL->>CT: Traverse active traces bidirectionally
-        CT-->>QL: ImpactPlan
-        QL-->>Operator: Impacted and invalidated artifacts
-
-        Operator->>QL: reconcileViews(oldView, revisedView)
-        QL->>CT: baselineThread(revisedRequirement)
-        QL->>CT: checkContinuity(revisedRequirement, strict=true)
-    end
+flowchart LR
+    Editor --> LSP[Own LSP4J SysML v2 LSP]
+    Templates[Template layer] --> Editor
+    LSP --> Parser[SysML text parser]
+    Parser --> Bridge[EMF/Ecore bridge]
+    Bridge --> QVT[Eclipse QVT-Operational]
+    QVT --> Bridge
+    Bridge --> Printer[SysML text printer]
+    Printer --> Files[.sysml files]
+    Files --> Git[Git revisions and baselines]
 ```
 
-The main operation sequence is:
-`main` → `developIntent` → `realizeArchitecture` → interface/port and behavioral realization
-→ allocation/deployment → `generateImplementation` → `planVerification`
-→ Relations enforcement → `verifySatisfaction` → Relations enforcement
-→ `reconcileViews` → `baselineThread`
-→ `checkContinuity`; changed artifacts loop back through this sequence via
-`propagateChange`.
+## Stack
 
-## Generic lifecycle configuration
+- **Java 17+** for the executable and language-server process.
+- **LSP4J** for JSON-RPC language-server capabilities.
+- **SysML text parser and printer** for the repository's small SysML v2 lifecycle
+  notation.
+- **Template library** for creating stakeholder needs, requirements,
+  architecture, behavior, verification, and evidence.
+- **EMF/Ecore** only at the Eclipse QVT model boundary.
+- **Eclipse QVT-OML 3.11.2** for executing `qvt/LifecycleOperational.qvto`.
+- **Git** for source revisions and baselines.
 
-```python
-from sysml_v2_qvt import Artifact, LifecycleEngine, LifecycleKinds
+This repository does not use a hosted SysML v2 API. Text, trace, and baseline
+data remain local to the files and Git repository.
 
-kinds = LifecycleKinds(
-    stakeholder_need="goal",
-    requirement="outcome",
-    architectural_element="solution",
-    behavior_element="workflow",
-    verification_evidence="proof",
-)
-engine = LifecycleEngine(kinds=kinds)
+## Build
 
-goal = Artifact(
-    id="GOAL-1",
-    kind="goal",
-    properties={"statement": "Complete the operation."},
-)
-outcome = engine.develop_intent(goal, "OUTCOME-1")
+```bash
+scripts/download-qvt-libs.sh
+mvn test package
 ```
 
-`generate_implementation()` accepts the source text or a renderer callback,
-plus language and entry-point metadata. It never interprets domain properties:
-that belongs to the selected renderer.
+The build downloads pinned Eclipse QVT and MDT OCL plugin jars. The final jar
+is at:
 
-In the Python reference runtime, `LifecycleEngine` performs operational
-transactions and `ContinuityRelations` materializes trace links for the
-corresponding QVT-Relations invariants.
+```text
+target/sysml-v2-qvt-continuity-1.0.0-SNAPSHOT.jar
+```
 
-## Executable behavior contracts
+## Generate a model
 
-Behavior models can describe:
+```bash
+java -jar target/sysml-v2-qvt-continuity-1.0.0-SNAPSHOT.jar \
+  template battery --output battery.sysml
+```
 
-- typed parameters, variables, and results;
-- operations and provided/required interfaces;
-- synchronous or asynchronous function calls and return bindings;
-- subscriptions, publishes, commands, RPC, QoS, channels, endpoints, and timeouts;
-- cyclic, periodic, one-shot, event-driven, or custom schedules;
-- state transitions, guards, priorities, and actions;
-- architecture allocations and runtime deployments;
-- code-generation targets, entry points, build systems, dependencies, and flags;
-- verification plans and execution environments.
+Generate a generic lifecycle template:
 
-Use `BehaviorModel`, `InterfaceSpec`, `PortSpec`, `FunctionCallSpec`,
-`CommunicationSpec`, `ScheduleSpec`, `AllocationSpec`, `DeploymentSpec`, and
-`CodeGenerationSpec` for typed values. Arbitrary domain metadata remains available
-through each descriptor's `properties` mapping.
+```bash
+java -jar target/sysml-v2-qvt-continuity-1.0.0-SNAPSHOT.jar \
+  template generic --output system.sysml
+```
 
-## Battery example
+## Validate SysML text
 
-The example starts with `N-BATT-THERMAL`, derives `R-BATT-THERMAL`, realizes
-four architectural elements and `B-BATT-THERMAL-CONTROL`, and deterministically
-generates `C-BATT-THERMAL-CONTROL`.
+```bash
+java -jar target/sysml-v2-qvt-continuity-1.0.0-SNAPSHOT.jar \
+  validate --input battery.sysml
+```
 
-It then creates:
+## Execute QVT
 
-- a structured behavior model with function calls, communications, transitions,
-  and a cyclic schedule;
-- allocation and deployment artifacts for the controller;
-- a verification plan with component, simulation, and execution-environment coverage;
-- component tests for low, high, deadband, and sensor-fault behavior;
-- simulated cold-start, hot-ambient, and sensor-loss scenarios;
-- verification evidence for the exact requirement, behavior, and code revisions;
-- a hash-addressed baseline that closes across the full thread.
+```bash
+java -jar target/sysml-v2-qvt-continuity-1.0.0-SNAPSHOT.jar \
+  qvt \
+  --input battery.sysml \
+  --output battery-lifecycle.sysml \
+  --transformation qvt/LifecycleOperational.qvto
+```
 
-Every derived artifact is revisioned. Replacing an artifact creates a
-`supersedes` trace instead of rewriting history.
+The Eclipse QVT-OML engine loads the transformation, executes it over a
+dynamic EMF/Ecore view of the SysML text model, and returns revised lifecycle
+artifacts. The Java continuity relation pass then materializes trace links.
+
+## Start the LSP
+
+```bash
+java -jar target/sysml-v2-qvt-continuity-1.0.0-SNAPSHOT.jar lsp
+```
+
+The server communicates over JSON-RPC stdio and provides:
+
+- Completion for lifecycle declaration keywords.
+- Hover information.
+- Diagnostics for malformed declarations and missing key properties.
+- Code actions for inserting battery or generic templates.
+- Full-document change synchronization.
