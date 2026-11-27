@@ -35,3 +35,6 @@ download "$ocl_base/org.eclipse.ocl.common_1.24.0.v20260601-1413.jar" \
   "$lib_dir/org.eclipse.ocl.common_1.24.0.v20260601-1413.jar"
 download "$ocl_base/org.eclipse.ocl.ecore_3.24.0.v20260601-1413.jar" \
   "$lib_dir/org.eclipse.ocl.ecore_3.24.0.v20260601-1413.jar"
+
+scripts_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+"$scripts_dir/install-pilot-sysml.sh"

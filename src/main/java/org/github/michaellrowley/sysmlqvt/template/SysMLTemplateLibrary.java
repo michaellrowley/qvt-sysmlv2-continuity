@@ -3,254 +3,119 @@ package org.github.michaellrowley.sysmlqvt.template;
 public final class SysMLTemplateLibrary {
     public String batteryLifecycle() {
         return """
-package battery;
+package 'Battery Thermal Control' {
+    private import ScalarValues::*;
 
-stakeholder need N-BATT-THERMAL {
-  statement = "Keep the battery within 20 to 30 degrees Celsius during normal operation.";
-  rationale = "Protect battery lifetime and prevent unsafe heater operation.";
-  acceptanceCriteria = ["Normal-operation temperature remains between 20C and 30C.", "A sensor fault produces SAFE_OFF."];
-  requirementId = "R-BATT-THERMAL";
-}
+    part def SafetyEngineer;
 
-requirement R-BATT-THERMAL {
-  revision = 1;
-  sourceNeed = "N-BATT-THERMAL@1";
-  statement = "Keep the battery within 20 to 30 degrees Celsius during normal operation.";
-  rationale = "Protect battery lifetime and prevent unsafe heater operation.";
-  acceptanceCriteria = ["Normal-operation temperature remains between 20C and 30C.", "A sensor fault produces SAFE_OFF."];
-}
+    concern def BatteryThermalSafetyConcern {
+        doc /* The battery temperature shall remain within safe operating limits and a sensor fault shall force safe-off. */
+        subject battery : Battery;
+        stakeholder safetyEngineer : SafetyEngineer;
+    }
 
-part def BatteryPack;
-part def TemperatureSensor;
-part def ThermalController;
-part def Heater;
+    requirement def <'BT-1'> BatteryTemperatureRequirement {
+        doc /* The battery shall remain between 20 and 30 degrees Celsius and enter safe-off after a sensor fault. */
+        subject battery : Battery;
+        attribute minTemperatureC : Real = 20.0;
+        attribute maxTemperatureC : Real = 30.0;
+        require constraint {
+            battery.temperatureC >= minTemperatureC and
+            battery.temperatureC <= maxTemperatureC
+        }
+    }
 
-behavior B-BATT-THERMAL-CONTROL {
-  revision = 1;
-  requirement = "R-BATT-THERMAL@1";
-  kind = "state_machine";
-  entryPoint = "generate_heater_command";
-  initialState = "HOLD";
-  states = ["HEAT", "HOLD", "SAFE_OFF"];
-  heatBelowC = 24.0;
-  offAboveC = 26.0;
-  safeOffOnSensorFault = true;
-  functionCalls = ["CALL-GENERATE-HEATER-COMMAND"];
-  communications = ["COMM-TEMPERATURE-SENSOR", "COMM-HEATER-COMMAND"];
-  schedules = ["SCH-THERMAL-CONTROL"];
-}
+    part def Battery {
+        attribute temperatureC : Real;
+        attribute sensorValid : Boolean;
+    }
 
-interface IF-BATT-THERMAL-CONTROL {
-  revision = 1;
-  name = "BatteryThermalInterface";
-  requirement = "R-BATT-THERMAL@1";
-  architecture = "ThermalController@1";
-  protocol = "CAN";
-}
+    port def TemperaturePort {
+        out temperatureC : Real;
+        out sensorValid : Boolean;
+    }
 
-port P-TEMPERATURE-IN {
-  revision = 1;
-  name = "temperature_in";
-  interface = "IF-BATT-THERMAL-CONTROL@1";
-  direction = "in";
-  protocol = "CAN";
-}
+    port def HeaterPort {
+        in heaterCommand : String;
+    }
 
-port P-HEATER-OUT {
-  revision = 1;
-  name = "heater_out";
-  interface = "IF-BATT-THERMAL-CONTROL@1";
-  direction = "out";
-  protocol = "CAN";
-}
+    interface def ThermalInterface {
+        end sensorEnd : TemperaturePort;
+        end controllerEnd : ~HeaterPort;
+    }
 
-connection CONN-BATT-THERMAL {
-  revision = 1;
-  source = "P-TEMPERATURE-IN@1";
-  target = "P-HEATER-OUT@1";
-  transport = "CAN";
-}
+    action def GenerateHeaterCommand {
+        in temperatureC : Real;
+        in sensorValid : Boolean;
+        out heaterCommand : String;
+    }
 
-function call CALL-GENERATE-HEATER-COMMAND {
-  revision = 1;
-  behavior = "B-BATT-THERMAL-CONTROL@1";
-  functionName = "generate_heater_command";
-  target = "ThermalController";
-  synchronous = true;
-  timeoutMs = 10;
-  returnBinding = "heaterCommand";
-}
+    part def TemperatureSensor {
+        port temperaturePort : TemperaturePort;
+    }
 
-communication COMM-TEMPERATURE-SENSOR {
-  revision = 1;
-  behavior = "B-BATT-THERMAL-CONTROL@1";
-  kind = "subscription";
-  direction = "in";
-  channel = "battery.temperature";
-  protocol = "CAN";
-  payloadType = "TemperatureReading";
-}
+    part def ThermalController {
+        port temperaturePort : ~TemperaturePort;
+        port heaterPort : HeaterPort;
+        action generateHeaterCommand : GenerateHeaterCommand;
+    }
 
-communication COMM-HEATER-COMMAND {
-  revision = 1;
-  behavior = "B-BATT-THERMAL-CONTROL@1";
-  kind = "command";
-  direction = "out";
-  channel = "heater.command";
-  protocol = "CAN";
-  payloadType = "HeaterCommand";
-}
+    part def Heater {
+        port heaterPort : ~HeaterPort;
+    }
 
-schedule SCH-THERMAL-CONTROL {
-  revision = 1;
-  behavior = "B-BATT-THERMAL-CONTROL@1";
-  kind = "cyclic";
-  periodMs = 100;
-  deadlineMs = 100;
-  wcetMs = 5;
-  priority = 50;
-  entryPoint = "generate_heater_command";
-}
+    part battery : Battery;
+    part sensor : TemperatureSensor;
+    part controller : ThermalController;
+    part heater : Heater;
 
-implementation C-BATT-THERMAL-CONTROL {
-  revision = 1;
-  sourceBehavior = "B-BATT-THERMAL-CONTROL@1";
-  language = "Python";
-  entryPoint = "generate_heater_command";
-  targetPlatform = "embedded";
-}
+    interface batteryThermalInterface : ThermalInterface
+        connect sensor.temperaturePort to controller.temperaturePort;
 
-allocation AL-BATT-THERMAL-CONTROL {
-  revision = 1;
-  sourceRef = "B-BATT-THERMAL-CONTROL@1";
-  targetRef = "ThermalController@1";
-}
+    allocate controller to battery;
+    allocate controller.generateHeaterCommand to controller;
 
-deployment DP-BATT-THERMAL-CONTROL {
-  revision = 1;
-  componentRef = "B-BATT-THERMAL-CONTROL@1";
-  targetRef = "ThermalController@1";
-  environment = "battery-controller-node";
-  runtime = "bare-metal";
-}
+    requirement temperatureControl : BatteryTemperatureRequirement {
+        subject battery = battery;
+    }
 
-verification plan VP-BATT-THERMAL {
-  revision = 1;
-  requirement = "R-BATT-THERMAL@1";
-  behavior = "B-BATT-THERMAL-CONTROL@1";
-  implementation = "C-BATT-THERMAL-CONTROL@1";
-  strategy = "requirements-driven component and scenario verification";
-}
+    verification def BatteryThermalTest {
+        subject testBattery : Battery;
+        objective {
+            verify temperatureControl;
+        }
+    }
 
-test component TC-C-LOW {
-  revision = 1;
-  purpose = "Low temperature requests heat.";
-  temperatureC = 20.0;
-  sensorValid = true;
-  expected = "HEAT";
-  requirement = "R-BATT-THERMAL@1";
-  behavior = "B-BATT-THERMAL-CONTROL@1";
-}
-
-test component TC-C-HIGH {
-  revision = 1;
-  purpose = "High temperature turns the heater off.";
-  temperatureC = 32.0;
-  sensorValid = true;
-  expected = "OFF";
-  requirement = "R-BATT-THERMAL@1";
-  behavior = "B-BATT-THERMAL-CONTROL@1";
-}
-
-test component TC-C-DEADBAND {
-  revision = 1;
-  purpose = "Deadband preserves the prior state.";
-  temperatureC = 25.0;
-  sensorValid = true;
-  expected = "HOLD";
-  requirement = "R-BATT-THERMAL@1";
-  behavior = "B-BATT-THERMAL-CONTROL@1";
-}
-
-test component TC-C-SENSOR-FAULT {
-  revision = 1;
-  purpose = "Sensor fault forces safe-off.";
-  temperatureC = 25.0;
-  sensorValid = false;
-  expected = "SAFE_OFF";
-  requirement = "R-BATT-THERMAL@1";
-  behavior = "B-BATT-THERMAL-CONTROL@1";
-}
-
-test scenario TC-S-COLD-START {
-  revision = 1;
-  purpose = "Cold battery recovers into the normal temperature band.";
-  initialTemperatureC = 18.0;
-  ambientTemperatureC = 20.0;
-  steps = 50;
-  requirement = "R-BATT-THERMAL@1";
-  behavior = "B-BATT-THERMAL-CONTROL@1";
-}
-
-test scenario TC-S-HOT-AMBIENT {
-  revision = 1;
-  purpose = "Hot ambient conditions cool below the upper limit.";
-  initialTemperatureC = 32.0;
-  ambientTemperatureC = 28.0;
-  steps = 50;
-  requirement = "R-BATT-THERMAL@1";
-  behavior = "B-BATT-THERMAL-CONTROL@1";
-}
-
-test scenario TC-S-SENSOR-LOSS {
-  revision = 1;
-  purpose = "Sensor loss forces safe-off.";
-  initialTemperatureC = 25.0;
-  ambientTemperatureC = 25.0;
-  steps = 50;
-  faultStep = 10;
-  requireSafeOff = true;
-  requirement = "R-BATT-THERMAL@1";
-  behavior = "B-BATT-THERMAL-CONTROL@1";
-}
-
-evidence E-BATT-THERMAL {
-  revision = 1;
-  result = "pass";
-  summary = "Battery thermal lifecycle verification passed.";
-  requirement = "R-BATT-THERMAL@1";
-  behavior = "B-BATT-THERMAL-CONTROL@1";
-  implementation = "C-BATT-THERMAL-CONTROL@1";
-  verificationPlan = "VP-BATT-THERMAL@1";
+    verification batteryThermalTest : BatteryThermalTest {
+        subject testBattery = battery;
+    }
 }
 """;
     }
 
     public String genericNeed() {
         return """
-package continuity;
+package Continuity;
 
-stakeholder need N-SYSTEM {
-  statement = "Describe the stakeholder need.";
-  rationale = "Describe why the need matters.";
-  acceptanceCriteria = ["Define observable acceptance criteria."];
-  requirementId = "R-SYSTEM";
+private import ScalarValues::*;
+
+concern def SystemNeedConcern {
+    doc /* Describe the stakeholder concern and intended outcome. */
+    subject system : System;
 }
 
-requirement R-SYSTEM {
-  revision = 1;
-  sourceNeed = "N-SYSTEM@1";
-  statement = "Describe the derived requirement.";
-  rationale = "Describe the requirement rationale.";
-  acceptanceCriteria = ["Define one or more acceptance criteria."];
+requirement def <'R-SYSTEM'> SystemRequirement {
+    doc /* Define the system requirement and observable acceptance criterion. */
+    subject system : System;
+    require constraint { true }
 }
 
-behavior B-SYSTEM {
-  revision = 1;
-  requirement = "R-SYSTEM@1";
-  kind = "state_machine";
-  entryPoint = "main";
-  states = ["RUNNING", "FAULT"];
+part def System;
+
+part system : System;
+
+requirement systemRequirement : SystemRequirement {
+    subject system = system;
 }
 """;
     }

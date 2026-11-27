@@ -20,8 +20,8 @@ flowchart LR
 
 - **Java 17+** for the executable and language-server process.
 - **LSP4J** for JSON-RPC language-server capabilities.
-- **SysML text parser and printer** for the repository's small SysML v2 lifecycle
-  notation.
+- **Official Pilot parser validator** for syntax and semantic verification of
+  SysML v2 `.sysml` files.
 - **Template library** for creating stakeholder needs, requirements,
   architecture, behavior, verification, and evidence.
 - **EMF/Ecore** only at the Eclipse QVT model boundary.
@@ -31,12 +31,17 @@ flowchart LR
 This repository does not use a hosted SysML v2 API. Text, trace, and baseline
 data remain local to the files and Git repository.
 
-The `.sysml` files in `examples/` use this repository's intentionally small
-lifecycle notation rather than the complete OMG SysML v2 textual notation.
-Elements such as `stakeholder need`, `behavior`, `implementation`,
-`allocation`, `deployment`, `verification plan`, and `evidence` are a
-domain-specific demonstration dialect, not a claim that every spelling is
-valid in the official Pilot Implementation.
+The `.sysml` files in `examples/` use SysML v2 textual notation and are
+validated with the official Systems Modeling API and Services Pilot
+Implementation parser. The battery example passes with zero syntax and
+semantic errors under Pilot `0.64.0-SNAPSHOT`.
+
+Validation is the authoritative gate:
+
+```text
+syntax=0
+semantic=0
+```
 
 ## Build
 
@@ -70,7 +75,9 @@ java -jar target/sysml-v2-qvt-continuity-1.0.0-SNAPSHOT.jar \
 
 ```bash
 java -jar target/sysml-v2-qvt-continuity-1.0.0-SNAPSHOT.jar \
-  validate --input battery.sysml
+  validate \
+  --input battery.sysml \
+  --pilot-library .build/pilot/SysML-v2-Pilot-Implementation/sysml.library
 ```
 
 ## Execute QVT

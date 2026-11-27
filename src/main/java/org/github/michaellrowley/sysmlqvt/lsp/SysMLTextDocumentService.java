@@ -86,20 +86,18 @@ public final class SysMLTextDocumentService implements TextDocumentService {
         List<CompletionItem> items = new ArrayList<>();
         for (String keyword : List.of(
             "package",
-            "stakeholder need",
-            "requirement",
+            "concern def",
+            "requirement def",
             "part def",
             "interface",
+            "interface def",
             "port",
+            "port def",
             "connection",
-            "behavior",
+            "action def",
+            "state def",
             "allocation",
-            "deployment",
-            "implementation",
-            "verification plan",
-            "test component",
-            "test scenario",
-            "evidence"
+            "verification def"
         )) {
             CompletionItem item = new CompletionItem(keyword);
             item.setKind(CompletionItemKind.Keyword);

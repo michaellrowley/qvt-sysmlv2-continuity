@@ -76,23 +76,89 @@ public final class Main {
         System.out.println("Wrote " + outputPath.toAbsolutePath());
     }
 
-    private static void runValidate(String[] args) throws IOException {
+    private static void runValidate(String[] args) throws IOException, InterruptedException {
         String input = option(args, "--input");
         if (input == null) {
             throw new IllegalArgumentException("--input is required");
         }
+        String pilotLibrary = option(args, "--pilot-library");
+        if (pilotLibrary == null) {
+            pilotLibrary = System.getProperty(
+                "sysml.pilot.library",
+                resolvePilotLibrary().toString()
+            );
+        }
+        if (!Files.isDirectory(Path.of(pilotLibrary))) {
+            throw new IllegalArgumentException(
+                "Pilot SysML library directory not found: " + pilotLibrary
+            );
+        }
+
         SysMLModel model = readModel(Path.of(input));
         List<SysMLDiagnostic> diagnostics = readDiagnostics(Path.of(input));
 
-        if (diagnostics.isEmpty()) {
-            System.out.println("Valid SysML continuity input: " + model.allArtifacts().size() + " artifacts");
-        } else {
+        int syntaxErrors = 0;
+        int semanticErrors = 0;
+        Path pilotJar = Path.of(
+            "lib/org.omg.sysml.interactive-0.64.0-SNAPSHOT-all.jar"
+        ).toAbsolutePath();
+        if (!Files.isRegularFile(pilotJar)) {
+            throw new IllegalArgumentException(
+                "Pilot interactive jar not found: " + pilotJar
+            );
+        }
+        for (Path path : sysmlFiles(Path.of(input))) {
+            ProcessBuilder builder = new ProcessBuilder(
+                "java",
+                "-Djava.awt.headless=true",
+                "-cp",
+                pilotJar.toString(),
+                "org.omg.sysml.interactive.profiler.SysMLInteractiveParsingProfiler",
+                pilotLibrary,
+                path.toAbsolutePath().toString()
+            );
+            builder.redirectErrorStream(true);
+            Process process = builder.start();
+            StringBuilder output = new StringBuilder();
+            try (var reader = new java.io.BufferedReader(
+                new java.io.InputStreamReader(process.getInputStream())
+            )) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    output.append(line).append('\n');
+                }
+            }
+            int exitCode = process.waitFor();
+            boolean pilotFailed =
+                output.toString().contains("ERROR:")
+                    || output.toString().contains("missing EOF")
+                    || output.toString().contains("Couldn't resolve")
+                    || exitCode != 0;
+            if (pilotFailed) {
+                System.err.println(
+                    "Pilot validation failed for " + path +
+                        ":\n" + output
+                );
+                syntaxErrors++;
+            }
+        }
+
+        if (!diagnostics.isEmpty()) {
             for (SysMLDiagnostic diagnostic : diagnostics) {
                 System.err.println(
                     diagnostic.line() + ":" + diagnostic.character() +
                         " [" + diagnostic.severity() + "] " + diagnostic.message()
                 );
             }
+        }
+
+        if (syntaxErrors == 0 && semanticErrors == 0) {
+            System.out.println(
+                "Valid SysML v2 under Pilot implementation: " +
+                    model.allArtifacts().size() + " custom-index artifacts"
+            );
+        } else {
+            System.exit(1);
         }
 
     }
@@ -271,12 +337,21 @@ public final class Main {
         return null;
     }
 
+    private static Path resolvePilotLibrary() {
+        Path local = Path.of(".build/pilot/SysML-v2-Pilot-Implementation/sysml.library");
+        if (Files.isDirectory(local)) {
+            return local;
+        }
+        return Path.of("/tmp/SysML-v2-Pilot-Implementation/sysml.library");
+    }
+
     private static void printUsage() {
         System.out.println(
             "Usage:\n" +
                 "  java -jar sysml-v2-qvt-continuity.jar lsp\n" +
                 "  java -jar sysml-v2-qvt-continuity.jar template battery --output battery.sysml\n" +
-                "  java -jar sysml-v2-qvt-continuity.jar validate --input battery.sysml\n" +
+                "  java -jar sysml-v2-qvt-continuity.jar validate --input battery.sysml " +
+                "--pilot-library .build/pilot/SysML-v2-Pilot-Implementation/sysml.library\n" +
                 "  java -jar sysml-v2-qvt-continuity.jar qvt --input battery.sysml " +
                 "--output lifecycle.sysml --transformation qvt/LifecycleOperational.qvto\n" +
                 "  java -jar sysml-v2-qvt-continuity.jar relations --input battery.sysml " +
