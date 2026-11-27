@@ -1,62 +1,93 @@
 # QVT sources
 
-`ContinuityRelations.qvtr` declares the consistency relations. It is the
-constraint/invariant layer:
+`LifecycleOperational.qvto` is an executable Eclipse QVT-OML transformation
+with the former operational scope:
 
-- stakeholder need to requirement;
-- requirement to architecture;
-- architecture to behavior;
-- behavior to deterministic implementation;
-- test to requirement and behavior;
-- behavior to passing verification evidence.
+- `markSuperseded`
+- `developIntent`
+- `realizeArchitecture`
+- `realizeInterface`
+- `realizePort`
+- `connectPorts`
+- `realizeBehavior`
+- `configureFunctionCall`
+- `configureCommunication`
+- `configureSchedule`
+- `allocateBehavior`
+- `deployComponent`
+- `generateImplementation`
+- `planVerification`
+- `verifySatisfaction`
+- `propagateChange`
+- `reconcileViews`
+- `baselineThread`
+- `checkContinuity`
 
-`LifecycleOperational.qvto` is the execution layer. It creates revisions,
-marks supersession, verifies the full thread, computes impact, reconciles views,
-and snapshots baselines. It does not create `CONTINUITY::TraceLink` objects;
-those are declared and materialized by `ContinuityRelations.qvtr`.
+The Java application converts repository `.sysml` text into EMF/Ecore objects,
+runs Eclipse QVT-OML, and converts the revised model back to SysML text.
 
-After an operational transaction, run the Relations transformation in
-`checkonly` mode to report broken invariants or in constrained `enforce` mode
-to create/update active trace links. Supersession is derived from a replacement
-artifact's `supersedes` references, not by an operational `ensureTrace` helper.
+`ContinuityRelations.qvtr` records the full declarative continuity relation
+contract. It covers:
 
-The source files target a small adapter metamodel named `SYSML` and a
-continuity metamodel named `CONTINUITY`. Their type names are intentionally
-explicit:
+- artifact supersession;
+- stakeholder need to requirement origin;
+- requirement realization by architecture;
+- architecture interface and port exposure;
+- port-to-port connections;
+- architecture support of behavior;
+- behavior function calls;
+- behavior communication;
+- behavior scheduling;
+- behavior allocation;
+- component deployment;
+- behavior implementation;
+- verification-plan evidence;
+- test coverage and execution.
 
-- `SYSML::StakeholderNeed`
-- `SYSML::Requirement`
-- `SYSML::ArchitecturalElement`
-- `SYSML::BehaviorElement`
-- `SYSML::Interface`
-- `SYSML::Port`
-- `SYSML::Connection`
-- `SYSML::FunctionCall`
-- `SYSML::Communication`
-- `SYSML::Schedule`
-- `SYSML::Allocation`
-- `SYSML::Deployment`
-- `SYSML::Implementation`
-- `SYSML::VerificationPlan`
-- `SYSML::TestCase`
-- `SYSML::VerificationEvidence`
-- `CONTINUITY::TraceLink`
-- `CONTINUITY::ImpactPlan`
-- `CONTINUITY::Reconciliation`
-- `CONTINUITY::Baseline`
+The Java `ContinuityRelations` implementation enforces this complete scope,
+supports `checkonly` diagnostics and `enforce` trace materialization, and
+materializes active links. Direct execution of the `.qvtr` file by a QVT
+Relations engine remains a separate integration.
 
-Stable identity, revision, and `properties` fields are part of the adapter
-contract. These sources are reference implementations, not a claim that the
-types are literal SysML v2 metaclass names.
+## End-to-end lifecycle sequence
 
-The example mappings use explicit source/target identities and properties rather
-than domain-specific ID prefixes. Domains can provide their own identity
-fields, artifact-role names, and code-generation adapters.
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Operator
+    participant TXT as .sysml text
+    participant PILOT as Pilot parser
+    participant BRIDGE as EMF/Ecore bridge
+    participant QVT as Eclipse QVT-Operational
+    participant LIFE as Lifecycle engine
+    participant REL as QVT-Relations contract
+    participant VERIFY as Verification environment
 
-The executable behavior contract includes typed parameters and variables,
-provided and required operations, function calls, communication subscriptions,
-publishes and commands, cyclic or event schedules, state transitions, and
-behavior actions. Interfaces, ports, connections, allocations, deployments,
-code-generation specifications, verification plans, execution environments,
-and implementation trace links are first-class contract elements rather than
-battery-specific properties.
+    Operator->>TXT: Edit need and lifecycle artifacts
+    Operator->>PILOT: Validate syntax and semantics
+    PILOT-->>Operator: Syntax and semantic result
+    Operator->>BRIDGE: Run qvt
+    BRIDGE->>BRIDGE: Convert text to EObjects
+    BRIDGE->>QVT: Execute LifecycleOperational.qvto
+    QVT-->>BRIDGE: Revised model
+    BRIDGE->>LIFE: Synchronize complete lifecycle
+    LIFE->>LIFE: Intent and architecture realization
+    LIFE->>LIFE: Interfaces, ports, connections, behavior
+    LIFE->>LIFE: Calls, communication, schedule
+    LIFE->>LIFE: Allocation and deployment
+    LIFE->>LIFE: Implementation and verification planning
+    LIFE->>REL: checkonly or enforce
+    REL-->>Operator: Diagnostics or active TraceLinks
+    LIFE->>VERIFY: Verify satisfaction
+    VERIFY-->>LIFE: Test and scenario evidence
+    LIFE->>REL: Enforce verification relations
+    LIFE-->>Operator: Reconciliation, baseline, continuity diagnostics
+
+    opt Change propagation
+        Operator->>LIFE: Revise artifact
+        LIFE->>LIFE: Re-run lifecycle operations
+        LIFE->>LIFE: propagateChange
+        LIFE-->>Operator: ImpactPlan
+        LIFE->>LIFE: Reconcile and baseline revised thread
+    end
+```
