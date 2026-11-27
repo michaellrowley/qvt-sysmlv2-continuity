@@ -14,6 +14,12 @@ import org.github.michaellrowley.sysmlqvt.template.SysMLTemplateLibrary;
 import org.github.michaellrowley.sysmlqvt.text.SysMLDiagnostic;
 import org.github.michaellrowley.sysmlqvt.text.SysMLParser;
 import org.github.michaellrowley.sysmlqvt.text.SysMLPrinter;
+import org.github.michaellrowley.sysmlqvt.crud.CrudOperator;
+import org.github.michaellrowley.sysmlqvt.crud.CrudRepository;
+import org.github.michaellrowley.sysmlqvt.crud.CrudRequest;
+import org.github.michaellrowley.sysmlqvt.crud.CrudResult;
+import org.github.michaellrowley.sysmlqvt.crud.EntityKind;
+import org.github.michaellrowley.sysmlqvt.crud.LifecycleActivity;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -21,6 +27,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 public final class Main {
     private Main() {
@@ -38,6 +45,7 @@ public final class Main {
             case "validate" -> runValidate(args);
             case "qvt" -> runQvt(args);
             case "relations" -> runRelations(args);
+            case "crud" -> runCrud(args);
             case "help", "--help", "-h" -> printUsage();
             default -> {
                 System.err.println("Unknown command: " + args[0]);
@@ -161,6 +169,101 @@ public final class Main {
             System.exit(1);
         }
 
+    }
+
+    private static void runCrud(String[] args) throws IOException {
+        String subcommand = args.length > 1 ? args[1].toLowerCase() : "";
+        if ("activities".equals(subcommand) || "list".equals(subcommand)) {
+            CrudRepository repository =
+                new CrudRepository(Path.of("crud"));
+            for (LifecycleActivity activity : repository.catalog().all()) {
+                System.out.println(
+                    activity.id() + " | " +
+                        activity.discipline() + " | " +
+                        activity.phase() + " | " +
+                        activity.name()
+                );
+            }
+            return;
+        }
+
+        if (!List.of("create", "request", "update", "delete")
+            .contains(subcommand)) {
+            throw new IllegalArgumentException(
+                "Usage: crud <create|request|update|delete|activities>"
+            );
+        }
+
+        String activityId = option(args, "--activity");
+        String kindText = option(args, "--kind");
+        String id = option(args, "--id");
+        String parentId = option(args, "--parent");
+        String name = option(args, "--name");
+        String workspace = option(args, "--workspace");
+        if (activityId == null || activityId.isBlank()) {
+            throw new IllegalArgumentException("--activity is required");
+        }
+
+        EntityKind kind = null;
+        if (kindText != null && !kindText.isBlank()) {
+            kind = EntityKind.valueOf(kindText.toUpperCase());
+        }
+        CrudOperator operator = switch (subcommand) {
+            case "create" -> CrudOperator.CREATE;
+            case "request" -> CrudOperator.REQUEST;
+            case "update" -> CrudOperator.UPDATE;
+            case "delete" -> CrudOperator.DELETE;
+            default -> throw new IllegalArgumentException(
+                "Unknown CRUD operator: " + subcommand
+            );
+        };
+
+        Map<String, Object> properties = new java.util.LinkedHashMap<>();
+        for (int index = 2; index < args.length - 1; index++) {
+            String key = args[index];
+            if (key.startsWith("--prop:")) {
+                properties.put(
+                    key.substring("--prop:".length()),
+                    args[index + 1]
+                );
+                index++;
+            }
+        }
+
+        CrudRepository repository = new CrudRepository(
+            workspace == null
+                ? Path.of("crud")
+                : Path.of(workspace)
+        );
+        CrudResult result = repository.execute(new CrudRequest(
+            operator,
+            activityId,
+            kind,
+            id,
+            parentId,
+            name,
+            properties,
+            subcommand.equals("request")
+                && java.util.Arrays.asList(args).contains("--include-deleted")
+        ));
+
+        if (!result.successful()) {
+            System.err.println(result.message());
+            System.exit(1);
+            return;
+        }
+        System.out.println(result.message());
+        for (String outputPath : result.outputPaths()) {
+            System.out.println(outputPath);
+        }
+        if (result.entity() == null) {
+            for (var entity : result.entities()) {
+                System.out.println(
+                    entity.ref() + " " + entity.kind() +
+                        " " + entity.name()
+                );
+            }
+        }
     }
 
     private static void runRelations(String[] args) throws IOException {
@@ -358,6 +461,12 @@ public final class Main {
                 "--mode checkonly\n" +
                 "  java -jar sysml-v2-qvt-continuity.jar relations --input battery.sysml " +
                 "--mode enforce --output relations.sysml"
+                + "\n"
+                + "  java -jar sysml-v2-qvt-continuity.jar crud activities\n"
+                + "  java -jar sysml-v2-qvt-continuity.jar crud create "
+                + "--activity software-implementation --kind CPP_IMPLEMENTATION "
+                + "--id CPP-CONTROL --name GenerateHeaterCommand "
+                + "--prop:signature 'HeaterCommand generate_heater_command(double temperatureC, bool sensorValid)'"
         );
     }
 }

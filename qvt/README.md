@@ -1,4 +1,24 @@
-# QVT sources
+# Legacy QVT sources
+
+QVT is retained for compatibility and executable lifecycle lower-level
+implementation. The primary interface is CRUD:
+
+```text
+Create  -> new domain/subsystem/requirement/behavior/implementation/test
+Request -> retrieve entity or activity-set revisions
+Update  -> revision replacement and supersession
+Delete  -> preserve history while marking the entity deleted
+```
+
+The legacy V-lifecycle operation model is retained as a compatibility
+transformation, but the primary model interface is CRUD:
+
+| Operator | Legacy lifecycle effect |
+|---|---|
+| Create | Create a domain, subsystem, requirement, interface, behavior, implementation, test, or baseline. |
+| Request | Read/retrieve an entity or activity set. |
+| Update | Create a new revision and supersede the prior version. |
+| Delete | Mark the entity deleted while retaining its history. |
 
 `LifecycleOperational.qvto` is an executable Eclipse QVT-OML transformation
 with the former operational scope:

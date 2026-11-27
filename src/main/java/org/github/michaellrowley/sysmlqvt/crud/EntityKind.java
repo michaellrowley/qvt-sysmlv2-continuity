@@ -1,0 +1,29 @@
+package org.github.michaellrowley.sysmlqvt.crud;
+
+public enum EntityKind {
+    CONOPS,
+    CONCERN,
+    DOMAIN,
+    SUBSYSTEM,
+    COMPONENT,
+    MODULE,
+    REQUIREMENT,
+    CONSTRAINT,
+    INTERFACE,
+    PORT,
+    BEHAVIOR,
+    ENTRYPOINT,
+    DATA_TYPE,
+    CPP_IMPLEMENTATION,
+    BUILD_TARGET,
+    TEST_SUITE,
+    TEST_CASE,
+    VERIFICATION_PLAN,
+    VERIFICATION_EVIDENCE,
+    VALIDATION_SCENARIO,
+    ALLOCATION,
+    DEPLOYMENT,
+    BASELINE,
+    RELEASE,
+    CHANGE_REQUEST
+}
