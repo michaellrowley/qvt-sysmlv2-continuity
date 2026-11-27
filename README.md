@@ -96,6 +96,98 @@ artifacts. The Java lifecycle engine restores the complete former operational
 scope, and the Java continuity relation pass enforces the complete former
 relation scope and materializes trace links.
 
+## End-to-end lifecycle sequence
+
+The lifecycle closes through intent, realization, verification, reconciliation,
+baselining, and change propagation.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Operator
+    participant TXT as .sysml text
+    participant LSP as SysML LSP
+    participant PARSER as SysML parser
+    participant PILOT as Pilot validator
+    participant BRIDGE as EMF/Ecore bridge
+    participant QVT as Eclipse QVT-Operational
+    participant LIFE as Lifecycle engine
+    participant REL as Continuity relations
+    participant VERIFY as Verification environment
+
+    Operator->>TXT: Edit stakeholder need and lifecycle model
+    TXT->>LSP: didOpen/didChange
+    LSP->>PARSER: Parse document
+    PARSER-->>LSP: Custom-index diagnostics
+    Operator->>PILOT: Validate .sysml
+    PILOT-->>Operator: Syntax and semantic result
+
+    Operator->>BRIDGE: Run qvt command
+    BRIDGE->>BRIDGE: Convert SysML text to dynamic EObjects
+    BRIDGE->>QVT: Execute LifecycleOperational.qvto
+    QVT-->>BRIDGE: Revised in-memory model
+
+    BRIDGE->>LIFE: Synchronize full lifecycle
+    LIFE->>LIFE: developIntent / markSuperseded
+    LIFE->>LIFE: realizeArchitecture
+    LIFE->>LIFE: realizeInterface / realizePort / connectPorts
+    LIFE->>LIFE: realizeBehavior
+    LIFE->>LIFE: configureFunctionCall / Communication / Schedule
+    LIFE->>LIFE: allocateBehavior / deployComponent
+    LIFE->>LIFE: generateImplementation
+    LIFE->>LIFE: planVerification
+
+    LIFE->>REL: enforce(checkonly or enforce)
+    REL-->>Operator: Broken-relations diagnostics or active TraceLinks
+
+    LIFE->>VERIFY: verifySatisfaction
+    VERIFY-->>LIFE: Component tests and scenario results
+    LIFE->>REL: Enforce verification relations
+
+    Operator->>LIFE: reconcileViews(left, right)
+    LIFE-->>Operator: Consistent or conflict
+
+    LIFE->>LIFE: baselineThread(requirement)
+    LIFE-->>Operator: Hash-addressed Baseline
+
+    LIFE->>LIFE: checkContinuity(requirement, strict=true)
+    LIFE-->>Operator: No diagnostics or continuity diagnostics
+
+    opt Change propagation
+        Operator->>LIFE: Revise need or lifecycle artifact
+        LIFE->>LIFE: Re-run lifecycle operations
+        LIFE->>REL: Revise active TraceLinks
+        LIFE->>LIFE: propagateChange(changedArtifact)
+        LIFE-->>Operator: ImpactPlan
+        LIFE->>LIFE: reconcileViews / baselineThread / checkContinuity
+    end
+
+    BRIDGE->>PARSER: Convert revised lifecycle back to SysML text
+    PARSER-->>Operator: Reviewed .sysml output
+```
+
+The main operation sequence is:
+
+```text
+main
+  -> developIntent
+  -> realizeArchitecture
+  -> realizeInterface / realizePort / connectPorts
+  -> realizeBehavior
+  -> configureFunctionCall / configureCommunication / configureSchedule
+  -> allocateBehavior / deployComponent
+  -> generateImplementation
+  -> planVerification
+  -> enforceContinuityRelations
+  -> verifySatisfaction
+  -> reconcileViews
+  -> baselineThread
+  -> checkContinuity
+```
+
+Changed artifacts loop back through this sequence through
+`propagateChange`, active-trace traversal, and revised lifecycle operations.
+
 ## Check or enforce continuity relations
 
 Run the Java implementation of `ContinuityRelations.qvtr` in check-only mode:

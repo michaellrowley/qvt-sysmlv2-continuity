@@ -48,3 +48,46 @@ The Java `ContinuityRelations` implementation enforces this complete scope,
 supports `checkonly` diagnostics and `enforce` trace materialization, and
 materializes active links. Direct execution of the `.qvtr` file by a QVT
 Relations engine remains a separate integration.
+
+## End-to-end lifecycle sequence
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Operator
+    participant TXT as .sysml text
+    participant PILOT as Pilot parser
+    participant BRIDGE as EMF/Ecore bridge
+    participant QVT as Eclipse QVT-Operational
+    participant LIFE as Lifecycle engine
+    participant REL as QVT-Relations contract
+    participant VERIFY as Verification environment
+
+    Operator->>TXT: Edit need and lifecycle artifacts
+    Operator->>PILOT: Validate syntax and semantics
+    PILOT-->>Operator: Syntax and semantic result
+    Operator->>BRIDGE: Run qvt
+    BRIDGE->>BRIDGE: Convert text to EObjects
+    BRIDGE->>QVT: Execute LifecycleOperational.qvto
+    QVT-->>BRIDGE: Revised model
+    BRIDGE->>LIFE: Synchronize complete lifecycle
+    LIFE->>LIFE: Intent and architecture realization
+    LIFE->>LIFE: Interfaces, ports, connections, behavior
+    LIFE->>LIFE: Calls, communication, schedule
+    LIFE->>LIFE: Allocation and deployment
+    LIFE->>LIFE: Implementation and verification planning
+    LIFE->>REL: checkonly or enforce
+    REL-->>Operator: Diagnostics or active TraceLinks
+    LIFE->>VERIFY: Verify satisfaction
+    VERIFY-->>LIFE: Test and scenario evidence
+    LIFE->>REL: Enforce verification relations
+    LIFE-->>Operator: Reconciliation, baseline, continuity diagnostics
+
+    opt Change propagation
+        Operator->>LIFE: Revise artifact
+        LIFE->>LIFE: Re-run lifecycle operations
+        LIFE->>LIFE: propagateChange
+        LIFE-->>Operator: ImpactPlan
+        LIFE->>LIFE: Reconcile and baseline revised thread
+    end
+```
